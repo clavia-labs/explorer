@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:clavia:trace:view-v1",
+  "title": "Clavia trace analysis view",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "view_id", "dataset_id", "title", "created_at", "cells", "object_sha256"],
+  "properties": {
+    "schema_version": { "const": "clavia.view/v1" },
+    "view_id": { "type": "string", "pattern": "^view_[a-f0-9]{24}$" },
+    "dataset_id": { "type": "string" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+    "object_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  },
+  "$defs": {
+    "cell": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "title", "content"],
+          "properties": { "kind": { "const": "markdown" }, "title": { "type": "string" }, "content": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "title", "query", "chart", "x", "y"],
+          "properties": {
+            "kind": { "const": "chart" },
+            "title": { "type": "string" },
+            "query": { "type": "object" },
+            "chart": { "enum": ["bar", "scatter", "distribution"] },
+            "x": { "type": "string" },
+            "y": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "title"],
+          "properties": {
+            "kind": { "const": "trace-list" },
+            "title": { "type": "string" },
+            "filters": { "type": "array" },
+            "sample_trace_ids": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      ]
+    }
+  }
+}

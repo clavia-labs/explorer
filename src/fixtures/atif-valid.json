@@ -1,0 +1,87 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "fixture-session",
+  "trajectory_id": "fixture-trace",
+  "agent": {
+    "name": "fixture-agent",
+    "version": "1",
+    "model_name": "openai/gpt-5.6-sol"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "timestamp": "2026-08-18T12:00:00.000Z",
+      "source": "user",
+      "message": "Draft a clause."
+    },
+    {
+      "step_id": 2,
+      "timestamp": "2026-08-18T12:00:01.000Z",
+      "source": "agent",
+      "model_name": "openai/gpt-5.6-sol",
+      "message": "I will write the requested clause.",
+      "reasoning_content": "The request requires a short output artifact.",
+      "tool_calls": [
+        {
+          "tool_call_id": "write-1",
+          "function_name": "write",
+          "arguments": { "file_path": "clause.md", "content": "Clause text" }
+        }
+      ],
+      "observation": {
+        "results": [
+          { "source_call_id": "write-1", "content": "Wrote clause.md" }
+        ]
+      },
+      "metrics": {
+        "prompt_tokens": 100,
+        "completion_tokens": 30,
+        "cost_usd": 0.01
+      },
+      "llm_call_count": 1
+    },
+    {
+      "step_id": 3,
+      "timestamp": "2026-08-18T12:00:02.000Z",
+      "source": "agent",
+      "message": "The clause is complete.",
+      "metrics": {
+        "prompt_tokens": 140,
+        "completion_tokens": 12,
+        "cost_usd": 0.005
+      },
+      "llm_call_count": 1
+    }
+  ],
+  "final_metrics": {
+    "total_prompt_tokens": 240,
+    "total_completion_tokens": 42,
+    "total_cost_usd": 0.015,
+    "total_steps": 3
+  },
+  "extra": {
+    "clavia": {
+      "schema_version": "clavia.trace-metadata/v1",
+      "title": "Fixture drafting trace",
+      "source": { "kind": "atif", "id": "fixture" },
+      "task": { "id": "fixture-1", "work_type": "draft" },
+      "outcome": {
+        "status": "completed",
+        "strict_pass": false,
+        "checkpoint_passed": 3,
+        "checkpoint_total": 4,
+        "alignment": "ALIGNED",
+        "usefulness": { "clarity": 3, "length": 2, "structure": 3 }
+      },
+      "behavior": {
+        "class": "direct-builder",
+        "summary": "Writes one artifact after a short plan.",
+        "tags": ["writes-once"]
+      },
+      "duration_ms": 2000,
+      "failure_modes": [
+        { "id": "C-004", "verdict": "FAIL", "justification": "The clause omits one required term." }
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# Clavia Trace Index
+
+Clavia Trace Index is a read-only analysis interface for immutable agent trajectories. Use the public API or MCP server to list datasets, query aggregate behavior, and inspect redacted traces.
+
+## Interface
+
+- Analysis compares behavior, model outcomes, and tool use.
+- Traces starts with a collapsed activity tree. Open a phase and turn to reach raw evidence. A linear record is also available.
+- Shared views enforce the partner-review or lab-prospect redaction policy on the server.
+
+## API discovery
+
+- [Current session](/v1/session): Lists visible datasets, views, and policy capabilities.
+- [Service health](/health): Reports whether the trace service is available.

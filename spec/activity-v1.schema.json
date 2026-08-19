@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:clavia:trace:activity-v1",
+  "title": "Clavia trace activity tree",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "trajectory_id", "generated_by", "root"],
+  "properties": {
+    "schema_version": { "const": "clavia.trace-activity/v1" },
+    "trajectory_id": { "type": "string", "minLength": 1 },
+    "generated_by": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm"],
+      "properties": {
+        "kind": { "const": "deterministic" },
+        "algorithm": { "const": "clavia.activity-tree/v1" }
+      }
+    },
+    "root": { "$ref": "#/$defs/node" }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "kind",
+        "category",
+        "dimension",
+        "label",
+        "summary",
+        "status",
+        "start_step",
+        "end_step",
+        "step_count",
+        "tool_call_count",
+        "tools",
+        "children"
+      ],
+      "properties": {
+        "node_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["trajectory", "phase", "turn", "step", "tool"] },
+        "category": {
+          "enum": [
+            "trajectory",
+            "orient",
+            "investigate",
+            "decide",
+            "change",
+            "verify",
+            "coordinate",
+            "recover",
+            "respond",
+            "execute"
+          ]
+        },
+        "dimension": { "enum": ["intent", "evidence", "decision", "execution", "recovery", "outcome"] },
+        "label": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string" },
+        "status": { "enum": ["completed", "failed", "unknown"] },
+        "start_step": { "type": "integer", "minimum": 1 },
+        "end_step": { "type": "integer", "minimum": 1 },
+        "step_count": { "type": "integer", "minimum": 1 },
+        "tool_call_count": { "type": "integer", "minimum": 0 },
+        "tools": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "start_time": { "type": "string", "format": "date-time" },
+        "end_time": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "leaf_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["step_id"],
+          "properties": {
+            "step_id": { "type": "integer", "minimum": 1 },
+            "tool_call_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/node" } }
+      }
+    }
+  }
+}
