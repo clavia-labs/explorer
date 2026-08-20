@@ -43,4 +43,16 @@ describe("Explorer password gate", () => {
     expect(denied?.headers.get("location")).toBe("/analysis?denied=1")
     expect(denied?.headers.has("set-cookie")).toBeFalse()
   })
+
+  test("accepts the shared password as a bearer token for API clients", async () => {
+    const authorized = await passwordGuard(new Request("https://explorer.test/v1/session", {
+      headers: { authorization: "Bearer held-secret" }
+    }), "held-secret")
+    expect(authorized).toBeUndefined()
+
+    const denied = await passwordGuard(new Request("https://explorer.test/v1/session", {
+      headers: { authorization: "Bearer wrong" }
+    }), "held-secret")
+    expect(denied?.status).toBe(401)
+  })
 })

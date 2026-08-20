@@ -116,6 +116,10 @@ describe("trace API", () => {
         `http://trace.local/v1/datasets/${dataset.dataset_id}/failure-clusters?share=${token}`
       ))
       expect(clusters.status).toBe(403)
+      const analysisExport = await api(new Request(
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/analysis-export?share=${token}`
+      ))
+      expect(analysisExport.status).toBe(403)
       store.close()
     } finally {
       await rm(directory, { recursive: true, force: true })
@@ -136,6 +140,65 @@ describe("trace API", () => {
       }))
       expect(response.status).toBe(201)
       expect((await apiBody(response)).policy).toBe("partner-review")
+      store.close()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("exports deterministic analysis tables with trace-level evidence", async () => {
+    const directory = await mkdtemp(resolve(tmpdir(), "clavia-trace-api-"))
+    try {
+      const store = new TraceStore(resolve(directory, "store.sqlite"))
+      const dataset = store.putDataset({ name: "Fixture", source: { kind: "fixture", id: "one" }, traces: [valid] })
+      const api = createApi(store)
+
+      const response = await api(new Request(
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/analysis-export`
+      ))
+      expect(response.status).toBe(200)
+      expect(response.headers.get("etag")).toBe(`"${dataset.object_sha256}"`)
+      const body = await response.json() as {
+        readonly schema_version: string
+        readonly dataset: { readonly dataset_id: string }
+        readonly tables: {
+          readonly traces: ReadonlyArray<Record<string, unknown>>
+          readonly steps: ReadonlyArray<Record<string, unknown>>
+          readonly tool_calls: ReadonlyArray<Record<string, unknown>>
+          readonly observations: ReadonlyArray<Record<string, unknown>>
+          readonly checkpoint_results: ReadonlyArray<Record<string, unknown>>
+        }
+      }
+      expect(body.schema_version).toBe("clavia.analysis-export/v1")
+      expect(body.dataset.dataset_id).toBe(dataset.dataset_id)
+      expect(body.tables.traces).toEqual([
+        expect.objectContaining({ trace_id: "fixture-trace", model: "openai/gpt-5.6-sol" })
+      ])
+      expect(body.tables.steps).toHaveLength(3)
+      expect(body.tables.steps[1]).toMatchObject({
+        trace_id: "fixture-trace",
+        step_id: 2,
+        message_text: "I will write the requested clause.",
+        tool_call_count: 1
+      })
+      expect(body.tables.tool_calls).toEqual([
+        expect.objectContaining({
+          trace_id: "fixture-trace",
+          step_id: 2,
+          tool_call_id: "write-1",
+          function_name: "write"
+        })
+      ])
+      expect(body.tables.observations).toEqual([
+        expect.objectContaining({ source_call_id: "write-1", content_text: "Wrote clause.md" })
+      ])
+      expect(body.tables.checkpoint_results).toEqual([
+        expect.objectContaining({
+          checkpoint_id: "C-004",
+          verdict: "FAIL",
+          justification: "The clause omits one required term."
+        })
+      ])
       store.close()
     } finally {
       await rm(directory, { recursive: true, force: true })

@@ -1,6 +1,8 @@
 import { resolve, sep } from "node:path"
+import { createMcpHandler } from "@modelcontextprotocol/server"
 import { passwordGuard } from "./access.ts"
 import { createApi } from "./api.ts"
+import { createTraceMcpServer } from "./mcp-server.ts"
 import { TraceStore } from "./store.ts"
 
 const argument = (name: string) => {
@@ -15,6 +17,7 @@ const dist = resolve(import.meta.dir, "../dist")
 const port = Number(argument("--port") ?? process.env.CONDUCTOR_PORT ?? 4321)
 const store = new TraceStore(storePath)
 const api = createApi(store)
+const mcp = createMcpHandler(() => createTraceMcpServer(store))
 const types: Readonly<Record<string, string>> = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -63,6 +66,7 @@ const server = Bun.serve({
     if (url.pathname === "/health") return Response.json({ ok: true })
     const access = await passwordGuard(request, process.env.EXPLORER_PASSWORD)
     if (access !== undefined) return access
+    if (url.pathname === "/mcp") return mcp.fetch(request)
     if (url.pathname.startsWith("/v1/")) return compressed(request, await api(request))
     const requested = resolve(dist, url.pathname.slice(1))
     if (requested.startsWith(`${dist}${sep}`)) {
@@ -81,10 +85,11 @@ const server = Bun.serve({
 console.log(`Clavia Trace is listening on ${server.url}`)
 console.log(`Trace store: ${storePath}`)
 
-const close = () => {
+const close = async () => {
   server.stop(true)
+  await mcp.close()
   store.close()
 }
 
-process.once("SIGINT", close)
-process.once("SIGTERM", close)
+process.once("SIGINT", () => void close())
+process.once("SIGTERM", () => void close())

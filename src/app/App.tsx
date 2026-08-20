@@ -263,7 +263,7 @@ function ModelEvidence({ traces, failures, onSelect }: {
   return <section className="model-evidence" aria-labelledby="model-evidence-title">
     <div className="section-heading">
       <div><p className="eyebrow">MODEL EVIDENCE</p><h2 id="model-evidence-title">Compare every model, then open the proof.</h2></div>
-      <p className="section-lede">The report includes task-type model performance validated by practicing legal experts, model strengths and failure modes, and annotated traces with concrete examples.</p>
+      <p className="section-lede">The report compares recorded task outcomes, scored checkpoints, execution patterns, and trace evidence for every imported model.</p>
     </div>
     <div className="model-matrix" role="region" aria-label="Performance comparison for every model" tabIndex={0}>
       <table><thead><tr><th scope="col">Model</th><th scope="col">Runs</th><th scope="col">Strict</th><th scope="col">Checkpoints</th><th scope="col">Task strength</th><th scope="col">Dominant pattern</th></tr></thead>
@@ -279,7 +279,7 @@ function ModelEvidence({ traces, failures, onSelect }: {
     <div className="model-dossier">
       <header className="model-dossier-head">
         <div><p className="eyebrow">SELECTED MODEL</p><h3>{shortModel(selected.model)}</h3><small>{selected.model}</small></div>
-        <dl><div><dt>Traces</dt><dd>{selected.trace_count}</dd></div><div><dt>Strict pass</dt><dd>{scoreLabel(selected.pass_rate)}</dd></div><div><dt>Expert checkpoints</dt><dd>{scoreLabel(selected.checkpoint_rate)}</dd></div><div><dt>Failed runs</dt><dd>{failedTraces}</dd></div></dl>
+        <dl><div><dt>Traces</dt><dd>{selected.trace_count}</dd></div><div><dt>Strict pass</dt><dd>{scoreLabel(selected.pass_rate)}</dd></div><div><dt>Scored checkpoints</dt><dd>{scoreLabel(selected.checkpoint_rate)}</dd></div><div><dt>Failed runs</dt><dd>{failedTraces}</dd></div></dl>
       </header>
       <div className="model-profile">
         <section aria-labelledby="task-performance-title"><div className="subsection-title"><span>01</span><div><p>MODEL STRENGTHS</p><h4 id="task-performance-title">Task-type performance</h4></div></div>
@@ -288,15 +288,15 @@ function ModelEvidence({ traces, failures, onSelect }: {
           </div>)}</div>
           <p className="strength-readout"><strong>Strongest task:</strong> {selected.strongest_task?.task_type ?? "No assessed task"}. <strong>Dominant execution pattern:</strong> {selected.dominant_behavior.replace(/-/g, " ")}.</p>
         </section>
-        <section aria-labelledby="failure-cluster-title"><div className="subsection-title"><span>02</span><div><p>FAILURE MODES</p><h4 id="failure-cluster-title">Clustered expert findings</h4></div></div>
-          <p className="cluster-summary">{modelClusters.length} failure clusters across {modelFailureCount} trace attributions. Select a cluster to see its dominant behavior and contributing runs.</p>
-          {modelClusters.length === 0 ? <div className="cluster-empty"><CircleCheck size={17} /><span>No failed checkpoint clusters were recorded for this model.</span></div> : <div className="failure-cluster-layout">
+        <section aria-labelledby="failure-cluster-title"><div className="subsection-title"><span>02</span><div><p>FAILED CHECKPOINTS</p><h4 id="failure-cluster-title">Grouped checkpoint evidence</h4></div></div>
+          <p className="cluster-summary">{modelClusters.length} checkpoint groups across {modelFailureCount} trace attributions. Select a group to see its dominant behavior and contributing runs.</p>
+          {modelClusters.length === 0 ? <div className="cluster-empty"><CircleCheck size={17} /><span>No failed checkpoint groups were recorded for this model.</span></div> : <div className="failure-cluster-layout">
             <div className="failure-cluster-list">{modelClusters.map((item) => <button className={item.cluster.id === activeCluster?.cluster.id ? "active" : ""} aria-pressed={item.cluster.id === activeCluster?.cluster.id} onClick={() => setSelectedFailure(item.cluster.id)} key={item.cluster.id}>
               <span><strong>{item.cluster.id}</strong><small>{item.traces.length} {item.traces.length === 1 ? "trace" : "traces"}</small></span><span>{item.dominantBehavior?.replace(/-/g, " ") ?? "mixed pattern"}</span><ChevronDown size={15} />
             </button>)}</div>
             {activeCluster !== undefined && <div className="cluster-evidence">
-              <header><div><span>ACTIVE CLUSTER</span><strong>{activeCluster.cluster.id}</strong></div><small>{activeCluster.traces.length} of {selected.trace_count} model traces</small></header>
-              {activeCluster.cluster.examples.find((example) => example.model === selected.model)?.justification !== undefined && <blockquote><span>EXPERT REVIEW SIGNAL</span><p>{activeCluster.cluster.examples.find((example) => example.model === selected.model)?.justification}</p></blockquote>}
+              <header><div><span>ACTIVE CHECKPOINT</span><strong>{activeCluster.cluster.id}</strong></div><small>{activeCluster.traces.length} of {selected.trace_count} model traces</small></header>
+              {activeCluster.cluster.examples.find((example) => example.model === selected.model)?.justification !== undefined && <blockquote><span>RECORDED GRADER RATIONALE</span><p>{activeCluster.cluster.examples.find((example) => example.model === selected.model)?.justification}</p></blockquote>}
               <div className="cluster-traces">{activeCluster.traces.map((trace) => <button onClick={() => { const summary = traceById.get(trace.trace_id); if (summary !== undefined) onSelect(summary) }} key={trace.trace_id}>
                 <span className="cluster-trace-status"><CircleAlert size={14} /><span className="sr-only">Failed checkpoint</span></span><span><strong>{trace.title}</strong><small>{trace.task_id ?? "Unclassified task"} · {trace.behavior.replace(/-/g, " ")}</small></span><ArrowUpRight size={14} />
               </button>)}</div>

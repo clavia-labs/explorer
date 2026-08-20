@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:clavia:trace:analysis-export-v1",
+  "title": "Clavia trace analysis export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset", "tables"],
+  "properties": {
+    "schema_version": { "const": "clavia.analysis-export/v1" },
+    "dataset": { "$ref": "#/$defs/dataset" },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traces", "steps", "tool_calls", "observations", "checkpoint_results", "artifacts"],
+      "properties": {
+        "traces": { "type": "array", "items": { "$ref": "#/$defs/trace" } },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+        "tool_calls": { "type": "array", "items": { "$ref": "#/$defs/toolCall" } },
+        "observations": { "type": "array", "items": { "$ref": "#/$defs/observation" } },
+        "checkpoint_results": { "type": "array", "items": { "$ref": "#/$defs/checkpoint" } },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact" } }
+      }
+    }
+  },
+  "$defs": {
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "dataset_id", "name", "created_at", "source", "traces", "object_sha256"],
+      "properties": {
+        "schema_version": { "const": "clavia.dataset/v1" },
+        "dataset_id": { "type": "string", "pattern": "^ds_[a-f0-9]{24}$" },
+        "name": { "type": "string", "minLength": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "type": "string" },
+            "id": { "type": "string" },
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        },
+        "traces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["trace_id", "object_sha256"],
+            "properties": {
+              "trace_id": { "type": "string" },
+              "object_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        },
+        "object_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "contentPart": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "source"],
+          "properties": {
+            "type": { "const": "image" },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["media_type", "path"],
+              "properties": {
+                "media_type": { "enum": ["image/jpeg", "image/png", "image/gif", "image/webp"] },
+                "path": { "type": "string" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "behavior": {
+      "enum": ["single-shot", "direct-builder", "research-first", "iterative-refiner", "recovery-loop", "answer-only"]
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_id",
+        "trace_id",
+        "title",
+        "model",
+        "agent",
+        "source",
+        "status",
+        "prompt_tokens",
+        "completion_tokens",
+        "cost_usd",
+        "steps",
+        "tool_calls",
+        "tool_names",
+        "behavior",
+        "behavior_summary",
+        "behavior_tags",
+        "failed_checkpoints",
+        "object_sha256",
+        "trace_path"
+      ],
+      "properties": {
+        "dataset_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "title": { "type": "string" },
+        "model": { "type": "string" },
+        "agent": { "type": "string" },
+        "source": { "enum": ["legalbench", "atif", "letta", "otel", "braintrust", "langfuse"] },
+        "task_id": { "type": "string" },
+        "work_type": { "type": "string" },
+        "status": { "type": "string" },
+        "strict_pass": { "type": "boolean" },
+        "checkpoint_passed": { "type": "number", "minimum": 0 },
+        "checkpoint_total": { "type": "number", "minimum": 0 },
+        "checkpoint_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "alignment": { "type": "string" },
+        "usefulness": { "type": "number" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "prompt_tokens": { "type": "number", "minimum": 0 },
+        "completion_tokens": { "type": "number", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "steps": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "tool_names": { "type": "array", "items": { "type": "string" } },
+        "behavior": { "$ref": "#/$defs/behavior" },
+        "behavior_summary": { "type": "string" },
+        "behavior_tags": { "type": "array", "items": { "type": "string" } },
+        "failed_checkpoints": { "type": "integer", "minimum": 0 },
+        "object_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "trace_path": { "type": "string", "pattern": "^/v1/traces/" }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_id",
+        "trace_id",
+        "step_id",
+        "source",
+        "message",
+        "message_text",
+        "tool_call_count",
+        "observation_count"
+      ],
+      "properties": {
+        "dataset_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "step_id": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "source": { "enum": ["system", "user", "agent"] },
+        "model_name": { "type": "string" },
+        "reasoning_effort": { "oneOf": [{ "type": "string" }, { "type": "number" }] },
+        "message": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "$ref": "#/$defs/contentPart" } }
+          ]
+        },
+        "message_text": { "type": "string" },
+        "reasoning_content": { "type": "string" },
+        "llm_call_count": { "type": "integer", "minimum": 0 },
+        "prompt_tokens": { "type": "number", "minimum": 0 },
+        "completion_tokens": { "type": "number", "minimum": 0 },
+        "cached_tokens": { "type": "number", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "tool_call_count": { "type": "integer", "minimum": 0 },
+        "observation_count": { "type": "integer", "minimum": 0 },
+        "is_copied_context": { "type": "boolean" },
+        "extra": { "type": "object" }
+      }
+    },
+    "toolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_id",
+        "trace_id",
+        "step_id",
+        "tool_call_index",
+        "tool_call_id",
+        "function_name",
+        "arguments"
+      ],
+      "properties": {
+        "dataset_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "step_id": { "type": "integer", "minimum": 1 },
+        "tool_call_index": { "type": "integer", "minimum": 0 },
+        "tool_call_id": { "type": "string" },
+        "function_name": { "type": "string" },
+        "arguments": { "type": "object" },
+        "extra": { "type": "object" }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_id", "trace_id", "step_id", "observation_index", "content_text"],
+      "properties": {
+        "dataset_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "step_id": { "type": "integer", "minimum": 1 },
+        "observation_index": { "type": "integer", "minimum": 0 },
+        "source_call_id": { "type": "string" },
+        "content": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "$ref": "#/$defs/contentPart" } }
+          ]
+        },
+        "content_text": { "type": "string" },
+        "subagent_trajectory_ref": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "trajectory_id": { "type": "string" },
+              "trajectory_path": { "type": "string" },
+              "session_id": { "type": "string" }
+            }
+          }
+        },
+        "extra": { "type": "object" }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_id", "trace_id", "model", "behavior", "checkpoint_id", "verdict"],
+      "properties": {
+        "dataset_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "model": { "type": "string" },
+        "task_id": { "type": "string" },
+        "work_type": { "type": "string" },
+        "behavior": { "$ref": "#/$defs/behavior" },
+        "strict_pass": { "type": "boolean" },
+        "checkpoint_id": { "type": "string" },
+        "verdict": { "enum": ["PASS", "FAIL", "NOT_ASSESSABLE"] },
+        "justification": { "type": "string" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset_id", "trace_id", "artifact_index", "path"],
+      "properties": {
+        "dataset_id": { "type": "string" },
+        "trace_id": { "type": "string" },
+        "artifact_index": { "type": "integer", "minimum": 0 },
+        "path": { "type": "string" },
+        "bytes": { "type": "number", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  }
+}

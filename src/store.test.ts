@@ -23,6 +23,7 @@ describe("content-addressed trace store", () => {
       expect(first.dataset_id).toBe(second.dataset_id)
       expect(store.listDatasets()).toHaveLength(1)
       expect(store.getTrace(first.dataset_id, "fixture-trace")?.trajectory_id).toBe("fixture-trace")
+      expect(store.listTraces(first.dataset_id).map((trace) => trace.trajectory_id)).toEqual(["fixture-trace"])
       expect(store.listFailureEvidence(first.dataset_id)).toEqual([
         expect.objectContaining({ failure_modes: [{ id: "C-004", verdict: "FAIL", justification: "The clause omits one required term." }] })
       ])

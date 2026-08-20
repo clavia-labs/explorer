@@ -111,6 +111,20 @@ export class D1TraceStore implements TraceStoreApi {
     return row === null ? undefined : parse<TraceSummary>(row.summary_json)
   }
 
+  async listTraces(datasetId: string) {
+    if (await this.getDataset(datasetId) === undefined) {
+      throw new ContractError("DATASET_MISSING", `dataset ${datasetId} does not exist`)
+    }
+    const rows = await this.database.prepare(
+      `SELECT objects.payload_json
+         FROM dataset_traces
+         JOIN objects USING (object_sha256)
+        WHERE dataset_traces.dataset_id = ?
+        ORDER BY dataset_traces.trace_id`
+    ).bind(datasetId).all<{ readonly payload_json: string }>()
+    return rows.results.map((row) => parse<AtifTrajectory>(row.payload_json))
+  }
+
   async getTrace(datasetId: string, traceId: string) {
     const row = await this.database.prepare(
       `SELECT objects.payload_json

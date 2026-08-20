@@ -35,6 +35,7 @@ The file importer accepts ATIF, OTLP JSON, Tardigrade span NDJSON, Braintrust ex
 | `GET` | `/v1/session` | Read available datasets, views, and share policy. |
 | `GET` | `/v1/datasets` | List immutable snapshots. |
 | `GET` | `/v1/datasets/:id/traces` | List indexed trace summaries. |
+| `GET` | `/v1/datasets/:id/analysis-export` | Read normalized analysis tables for one immutable snapshot. |
 | `GET` | `/v1/traces/:id?dataset_id=:dataset` | Read one full or redacted trajectory. |
 | `GET` | `/v1/traces/:id/summary?dataset_id=:dataset` | Read one indexed trace summary. |
 | `GET` | `/v1/traces/:id/activity?dataset_id=:dataset` | Read the deterministic activity tree for one trajectory. |
@@ -61,7 +62,13 @@ An MCP client can use this local configuration:
 }
 ```
 
-The tools are `list_datasets`, `get_dataset`, `get_trace`, `query_traces`, `create_view`, and `share_view`. `get_trace` returns the activity tree by default. Set its format to `compact` or `atif` when that detail is useful.
+The tools are `list_datasets`, `get_dataset`, `get_analysis_table`, `get_trace`, `query_traces`, `create_view`, and `share_view`. `get_analysis_table` returns a bounded page from a normalized table. `get_trace` returns the activity tree by default. Set its format to `compact` or `atif` when that detail is useful.
+
+The hosted Streamable HTTP endpoint is `https://explorer.clavia.ai/mcp`. Send the Explorer access password as a Bearer token. The same endpoint can be configured as a Hex custom MCP External App when that feature is available in the workspace.
+
+## Hex
+
+The dependable Hex integration loads the immutable analysis export from a Python cell. See [Hex integration](docs/hex.md) and copy [the notebook loader](examples/hex_loader.py) into the project.
 
 ## Telemetry
 
@@ -69,7 +76,7 @@ Future Legal Benchmarks and Legalenv agent runs produce local Tardigrade span fi
 
 ## Cloudflare
 
-The production Worker serves the application assets and the `/v1` API. A D1 database stores immutable datasets and views.
+The production Worker serves the application assets, the `/v1` API, and the `/mcp` endpoint. A D1 database stores immutable datasets and views.
 
 Apply the database migrations before the first deployment:
 
@@ -77,10 +84,11 @@ Apply the database migrations before the first deployment:
 bunx --bun wrangler d1 migrations apply explorer --remote
 ```
 
-Add the share-signing secret through Wrangler. Then deploy the Worker:
+Add the share-signing secret and Explorer access password through Wrangler. Then deploy the Worker:
 
 ```sh
 bunx --bun wrangler secret put SHARE_SECRET
+bunx --bun wrangler secret put EXPLORER_PASSWORD
 bun run deploy
 ```
 

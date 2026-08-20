@@ -52,6 +52,10 @@ export const passwordGuard = async (request: Request, password: string | undefin
   const url = new URL(request.url)
   const expected = await digest(password)
   if (cookieValue(request) === expected) return undefined
+  const authorization = request.headers.get("authorization")
+  if (authorization?.startsWith("Bearer ") === true && await digest(authorization.slice(7)) === expected) {
+    return undefined
+  }
 
   const submitted = url.searchParams.get("access")
   if (submitted !== null) {
@@ -67,10 +71,17 @@ export const passwordGuard = async (request: Request, password: string | undefin
     return new Response(null, { status: 303, headers })
   }
 
-  if (url.pathname.startsWith("/v1/")) {
+  if (url.pathname.startsWith("/v1/") || url.pathname === "/mcp") {
     return Response.json(
       { error: { code: "ACCESS_REQUIRED", message: "Explorer access is required" } },
-      { status: 401, headers: { "cache-control": "no-store", vary: "Cookie" } }
+      {
+        status: 401,
+        headers: {
+          "cache-control": "no-store",
+          vary: "Cookie, Authorization",
+          "www-authenticate": "Bearer"
+        }
+      }
     )
   }
   return new Response(unlockPage(url), {

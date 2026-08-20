@@ -3,6 +3,7 @@ export const TRACE_METADATA_VERSION = "clavia.trace-metadata/v1" as const
 export const DATASET_VERSION = "clavia.dataset/v1" as const
 export const VIEW_VERSION = "clavia.view/v1" as const
 export const TRACE_ACTIVITY_VERSION = "clavia.trace-activity/v1" as const
+export const ANALYSIS_EXPORT_VERSION = "clavia.analysis-export/v1" as const
 
 export type ContentPart =
   | { readonly type: "text"; readonly text: string }
@@ -170,6 +171,92 @@ export interface TraceSummary {
 export interface TraceFailureEvidence {
   readonly summary: TraceSummary
   readonly failure_modes: ReadonlyArray<FailureMode>
+}
+
+export interface AnalysisTraceRow extends TraceSummary {
+  readonly dataset_id: string
+  readonly object_sha256: string
+  readonly trace_path: string
+}
+
+export interface AnalysisStepRow {
+  readonly dataset_id: string
+  readonly trace_id: string
+  readonly step_id: number
+  readonly timestamp?: string
+  readonly source: AtifStep["source"]
+  readonly model_name?: string
+  readonly reasoning_effort?: string | number
+  readonly message: AtifStep["message"]
+  readonly message_text: string
+  readonly reasoning_content?: string
+  readonly llm_call_count?: number
+  readonly prompt_tokens?: number
+  readonly completion_tokens?: number
+  readonly cached_tokens?: number
+  readonly cost_usd?: number
+  readonly tool_call_count: number
+  readonly observation_count: number
+  readonly is_copied_context?: boolean
+  readonly extra?: Readonly<Record<string, unknown>>
+}
+
+export interface AnalysisToolCallRow {
+  readonly dataset_id: string
+  readonly trace_id: string
+  readonly step_id: number
+  readonly tool_call_index: number
+  readonly tool_call_id: string
+  readonly function_name: string
+  readonly arguments: Readonly<Record<string, unknown>>
+  readonly extra?: Readonly<Record<string, unknown>>
+}
+
+export interface AnalysisObservationRow {
+  readonly dataset_id: string
+  readonly trace_id: string
+  readonly step_id: number
+  readonly observation_index: number
+  readonly source_call_id?: string
+  readonly content?: AtifObservationResult["content"]
+  readonly content_text: string
+  readonly subagent_trajectory_ref?: AtifObservationResult["subagent_trajectory_ref"]
+  readonly extra?: Readonly<Record<string, unknown>>
+}
+
+export interface AnalysisCheckpointRow {
+  readonly dataset_id: string
+  readonly trace_id: string
+  readonly model: string
+  readonly task_id?: string
+  readonly work_type?: string
+  readonly behavior: BehaviorClass
+  readonly strict_pass?: boolean
+  readonly checkpoint_id: string
+  readonly verdict: FailureMode["verdict"]
+  readonly justification?: string
+}
+
+export interface AnalysisArtifactRow {
+  readonly dataset_id: string
+  readonly trace_id: string
+  readonly artifact_index: number
+  readonly path: string
+  readonly bytes?: number
+  readonly sha256?: string
+}
+
+export interface AnalysisExport {
+  readonly schema_version: typeof ANALYSIS_EXPORT_VERSION
+  readonly dataset: DatasetManifest
+  readonly tables: {
+    readonly traces: ReadonlyArray<AnalysisTraceRow>
+    readonly steps: ReadonlyArray<AnalysisStepRow>
+    readonly tool_calls: ReadonlyArray<AnalysisToolCallRow>
+    readonly observations: ReadonlyArray<AnalysisObservationRow>
+    readonly checkpoint_results: ReadonlyArray<AnalysisCheckpointRow>
+    readonly artifacts: ReadonlyArray<AnalysisArtifactRow>
+  }
 }
 
 export interface FailureClusterTrace {

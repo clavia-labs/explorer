@@ -10,6 +10,7 @@ import { policyCapabilities, redactTrace } from "./redaction.ts"
 import { createShareToken, verifyShareToken, type ShareClaims } from "./share.ts"
 import type { TraceStoreApi } from "./store-api.ts"
 import { createDefaultView } from "./views.ts"
+import { createAnalysisExport } from "./analysis-export.ts"
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status,
@@ -119,6 +120,22 @@ export const createApi = (store: TraceStoreApi) => {
           traces = traces.filter((trace) => sample.has(trace.trace_id))
         }
         return json({ policy, traces })
+      }
+
+      const analysisExportMatch = url.pathname.match(/^\/v1\/datasets\/([^/]+)\/analysis-export$/)
+      if (request.method === "GET" && analysisExportMatch !== null) {
+        internal(access)
+        const datasetId = decodeURIComponent(analysisExportMatch[1]!)
+        datasetAccess(access, datasetId)
+        const analysis = await createAnalysisExport(store, datasetId)
+        const etag = `"${analysis.dataset.object_sha256}"`
+        const headers = {
+          "cache-control": "private, max-age=300",
+          "content-type": "application/json",
+          etag
+        }
+        if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers })
+        return new Response(JSON.stringify(analysis), { headers })
       }
 
       const failuresMatch = url.pathname.match(/^\/v1\/datasets\/([^/]+)\/failure-clusters$/)

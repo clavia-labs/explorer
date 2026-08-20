@@ -1,6 +1,6 @@
 # Trace platform
 
-The trace platform turns agent run records into immutable review datasets. It supports aggregate analysis, hierarchical activity drill-down, and an optional linear record for each trajectory. The executable package is `trace/`.
+The trace platform turns agent run records into immutable review datasets. It supports aggregate analysis, hierarchical activity drill-down, and an optional linear record for each trajectory. This repository contains the executable package.
 
 ## Product boundary
 
@@ -10,19 +10,20 @@ The service stores imported traces and answers questions about them. It does not
 
 ## Canonical trajectory
 
-The canonical storage form is the [Agent Trajectory Interchange Format v1.7](../trace/spec/atif-v1.7.schema.json). This profile requires `trajectory_id` and `extra.clavia` because the store needs stable identity and review metadata.
+The canonical storage form is the [Agent Trajectory Interchange Format v1.7](../spec/atif-v1.7.schema.json). This profile requires `trajectory_id` and `extra.clavia` because the store needs stable identity and review metadata.
 
 One ATIF step represents at most one model inference. A deterministic dispatch uses `llm_call_count: 0` and carries no model metrics or reasoning. Each tool result uses `source_call_id` to name its tool call.
 
-The Clavia extension records source identity, task identity, outcome, derived behavior, duration, failure modes, artifacts, and provider metadata. Behavior labels describe recurring action patterns. They do not set expected conduct.
+The Clavia extension records source identity, task identity, outcome, derived behavior, duration, stored checkpoint evidence, artifacts, and provider metadata. Behavior labels describe recurring action patterns. They do not set expected conduct.
 
 The public contracts are:
 
-- [ATIF v1.7 storage profile](../trace/spec/atif-v1.7.schema.json)
-- [Immutable dataset v1](../trace/spec/dataset-v1.schema.json)
-- [Trace query v1](../trace/spec/query-v1.schema.json)
-- [Analysis view v1](../trace/spec/view-v1.schema.json)
-- [Trace activity tree v1](../trace/spec/activity-v1.schema.json)
+- [ATIF v1.7 storage profile](../spec/atif-v1.7.schema.json)
+- [Immutable dataset v1](../spec/dataset-v1.schema.json)
+- [Trace query v1](../spec/query-v1.schema.json)
+- [Analysis view v1](../spec/view-v1.schema.json)
+- [Trace activity tree v1](../spec/activity-v1.schema.json)
+- [Analysis export v1](../spec/analysis-export-v1.schema.json)
 
 The MCP `get_trace` tool returns the deterministic activity tree by default. Use the compact format for a short action stream. Use full ATIF when replay detail matters.
 
@@ -55,7 +56,7 @@ The trace reader starts with collapsed phases and a phase ribbon. A reviewer can
 | Langfuse | Observation export rows | Observations are grouped by `trace_id` and ordered by start time. |
 | Letta | Compact trajectory JSON | User, reasoning, assistant, and tool records become ATIF steps. |
 
-Converters are offline TypeScript modules under `trace/src/importers`. They need no service credential.
+Converters are offline TypeScript modules under `src/importers`. They need no service credential.
 
 ## Immutable datasets
 
@@ -63,7 +64,7 @@ The store writes each canonical trajectory as a content-addressed object. A data
 
 Importing the same name, source, and trace objects returns the existing dataset. Any trace content change produces a new dataset ID. The SQLite store uses WAL mode and keeps datasets, summaries, views, and share secrets in one file.
 
-Generated stores and imported datasets belong under `trace/build/`. They are local artifacts and must not enter Git.
+Generated stores and imported datasets belong under `build/`. They are local artifacts and must not enter Git.
 
 ## Query contract
 
@@ -72,6 +73,16 @@ Generated stores and imported datasets belong under `trace/build/`. They are loc
 The metrics are trace count, strict pass rate, pooled checkpoint rate, average usefulness, average cost, average duration, average tool calls, and average prompt or completion tokens. Checkpoint rate pools passed and total checkpoints before division.
 
 The query engine reads stored summaries and performs no model call. Results are deterministic for one dataset ID and query.
+
+## Analysis export
+
+`GET /v1/datasets/:id/analysis-export` returns one deterministic JSON bundle for internal analysis. The bundle contains normalized `traces`, `steps`, `tool_calls`, `observations`, `checkpoint_results`, and `artifacts` tables. Each evidence row keeps its dataset ID and trace ID.
+
+The trace table includes a path to the complete canonical trajectory. The other tables preserve messages, reasoning, structured tool arguments, tool results, recorded checkpoint rationales, and artifact references. This gives a notebook enough context to build a question-specific corpus and link any derived claim back to source evidence.
+
+The `checkpoint_results` table reports stored scorer output. A shared checkpoint ID is a rubric grouping. It is not a semantic failure cluster and does not imply validation by a practicing legal expert.
+
+The endpoint requires internal access and does not accept a share token. The response ETag is the immutable dataset object hash. Hex setup and table use are defined in [Hex integration](hex.md).
 
 ## Views and sharing
 
@@ -97,9 +108,9 @@ Redaction runs on the server before the trace leaves the API. The browser never 
 
 ## API and MCP
 
-The HTTP API exposes session context, datasets, trace summaries, trace drill-down, activity trees, individual steps, queries, views, shares, and file import under `/v1`.
+The HTTP API exposes session context, datasets, normalized analysis exports, trace summaries, trace drill-down, activity trees, individual steps, queries, views, shares, and file import under `/v1`.
 
-The stdio MCP server mirrors the store operations through `list_datasets`, `get_dataset`, `get_trace`, `query_traces`, `create_view`, and `share_view`. This gives an analysis agent enough access to answer questions and prepare chart specifications without an agent-hosting service.
+The MCP server mirrors the store operations through `list_datasets`, `get_dataset`, `get_analysis_table`, `get_trace`, `query_traces`, `create_view`, and `share_view`. It runs over stdio for local clients and Streamable HTTP at `/mcp` for hosted clients. `get_analysis_table` pages through the same normalized analysis contract used by Hex notebooks.
 
 ## Tardigrade telemetry
 
