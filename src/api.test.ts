@@ -150,17 +150,33 @@ describe("trace API", () => {
     const directory = await mkdtemp(resolve(tmpdir(), "clavia-trace-api-"))
     try {
       const store = new TraceStore(resolve(directory, "store.sqlite"))
-      const dataset = store.putDataset({ name: "Fixture", source: { kind: "fixture", id: "one" }, traces: [valid] })
+      const secondTrace = structuredClone(valid)
+      secondTrace.trajectory_id = "fixture-trace-2"
+      secondTrace.session_id = "fixture-session-2"
+      secondTrace.extra.clavia.title = "Second fixture trace"
+      const dataset = store.putDataset({
+        name: "Fixture",
+        source: { kind: "fixture", id: "one" },
+        traces: [valid, secondTrace]
+      })
       const api = createApi(store)
 
       const response = await api(new Request(
-        `http://trace.local/v1/datasets/${dataset.dataset_id}/analysis-export`
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/analysis-export?trace_limit=1`
       ))
       expect(response.status).toBe(200)
-      expect(response.headers.get("etag")).toBe(`"${dataset.object_sha256}"`)
+      expect(response.headers.get("etag")).toBe(`"${dataset.object_sha256}:0:1"`)
+      expect(response.headers.get("link")).toContain("trace_offset=1")
       const body = await response.json() as {
         readonly schema_version: string
         readonly dataset: { readonly dataset_id: string }
+        readonly page: {
+          readonly trace_offset: number
+          readonly trace_limit: number
+          readonly total_traces: number
+          readonly returned_traces: number
+          readonly next_trace_offset?: number
+        }
         readonly tables: {
           readonly traces: ReadonlyArray<Record<string, unknown>>
           readonly steps: ReadonlyArray<Record<string, unknown>>
@@ -171,6 +187,13 @@ describe("trace API", () => {
       }
       expect(body.schema_version).toBe("clavia.analysis-export/v1")
       expect(body.dataset.dataset_id).toBe(dataset.dataset_id)
+      expect(body.page).toEqual({
+        trace_offset: 0,
+        trace_limit: 1,
+        total_traces: 2,
+        returned_traces: 1,
+        next_trace_offset: 1
+      })
       expect(body.tables.traces).toEqual([
         expect.objectContaining({ trace_id: "fixture-trace", model: "openai/gpt-5.6-sol" })
       ])
@@ -199,6 +222,19 @@ describe("trace API", () => {
           justification: "The clause omits one required term."
         })
       ])
+
+      const next = await api(new Request(
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/analysis-export?trace_offset=1&trace_limit=1`
+      ))
+      const nextBody = await next.json() as typeof body
+      expect(nextBody.page.next_trace_offset).toBeUndefined()
+      expect(nextBody.tables.traces[0]).toMatchObject({ trace_id: "fixture-trace-2" })
+
+      const oversized = await api(new Request(
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/analysis-export?trace_limit=21`
+      ))
+      expect(oversized.status).toBe(400)
+      expect(await oversized.json()).toMatchObject({ error: { code: "ANALYSIS_LIMIT" } })
       store.close()
     } finally {
       await rm(directory, { recursive: true, force: true })

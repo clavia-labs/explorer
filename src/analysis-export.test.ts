@@ -14,6 +14,12 @@ describe("analysis export", () => {
       const first = await createAnalysisExport(store, dataset.dataset_id)
       const second = await createAnalysisExport(store, dataset.dataset_id)
       expect(second).toEqual(first)
+      expect(first.page).toEqual({
+        trace_offset: 0,
+        trace_limit: 10,
+        total_traces: 1,
+        returned_traces: 1
+      })
 
       const validate = new AjvJsonSchemaValidator().getValidator(schema as JsonSchemaType)
       const result = validate(first)

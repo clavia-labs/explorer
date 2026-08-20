@@ -13,6 +13,14 @@ import {
 import type { TraceStoreApi } from "./store-api.ts"
 import { summarizeTrace } from "./summary.ts"
 
+export const DEFAULT_ANALYSIS_TRACE_LIMIT = 10
+export const MAX_ANALYSIS_TRACE_LIMIT = 20
+
+export interface AnalysisExportOptions {
+  readonly traceOffset?: number
+  readonly traceLimit?: number
+}
+
 const contentText = (content: string | ReadonlyArray<ContentPart> | undefined) => {
   if (content === undefined) return ""
   if (typeof content === "string") return content
@@ -39,15 +47,28 @@ const observationRow = (
 
 export const createAnalysisExport = async (
   store: TraceStoreApi,
-  datasetId: string
+  datasetId: string,
+  options: AnalysisExportOptions = {}
 ): Promise<AnalysisExport> => {
+  const traceOffset = options.traceOffset ?? 0
+  const traceLimit = options.traceLimit ?? DEFAULT_ANALYSIS_TRACE_LIMIT
+  if (!Number.isSafeInteger(traceOffset) || traceOffset < 0) {
+    throw new ContractError("ANALYSIS_OFFSET", "trace_offset must be a non-negative integer")
+  }
+  if (!Number.isSafeInteger(traceLimit) || traceLimit < 1 || traceLimit > MAX_ANALYSIS_TRACE_LIMIT) {
+    throw new ContractError("ANALYSIS_LIMIT", `trace_limit must be between 1 and ${MAX_ANALYSIS_TRACE_LIMIT}`)
+  }
   const dataset = await store.getDataset(datasetId)
   if (dataset === undefined) throw new ContractError("DATASET_MISSING", "dataset does not exist")
 
   const objects = new Map(dataset.traces.map((entry) => [entry.trace_id, entry.object_sha256]))
-  const heldTraces = new Map((await store.listTraces(datasetId)).map((trace) => [trace.trajectory_id, trace]))
   const traces = [...dataset.traces]
     .sort((left, right) => left.trace_id.localeCompare(right.trace_id))
+    .slice(traceOffset, traceOffset + traceLimit)
+  const heldTraces = new Map(
+    (await store.listTracesPage(datasetId, traceOffset, traceLimit)).map((trace) => [trace.trajectory_id, trace])
+  )
+  const pageTraces = traces
     .map(({ trace_id }) => {
       const trace = heldTraces.get(trace_id)
       if (trace === undefined) throw new ContractError("TRACE_MISSING", `trace ${trace_id} does not exist`)
@@ -60,7 +81,7 @@ export const createAnalysisExport = async (
   const checkpointResults: AnalysisCheckpointRow[] = []
   const artifacts: AnalysisArtifactRow[] = []
 
-  for (const trace of traces) {
+  for (const trace of pageTraces) {
     const metadata = trace.extra.clavia
     const summary = summarizeTrace(trace)
     for (const step of trace.steps) {
@@ -124,8 +145,17 @@ export const createAnalysisExport = async (
   return {
     schema_version: ANALYSIS_EXPORT_VERSION,
     dataset,
+    page: {
+      trace_offset: traceOffset,
+      trace_limit: traceLimit,
+      total_traces: dataset.traces.length,
+      returned_traces: pageTraces.length,
+      ...(traceOffset + pageTraces.length >= dataset.traces.length
+        ? {}
+        : { next_trace_offset: traceOffset + pageTraces.length })
+    },
     tables: {
-      traces: traces.map((trace) => ({
+      traces: pageTraces.map((trace) => ({
         dataset_id: datasetId,
         ...summarizeTrace(trace),
         object_sha256: objects.get(trace.trajectory_id)!,

@@ -35,7 +35,7 @@ The file importer accepts ATIF, OTLP JSON, Tardigrade span NDJSON, Braintrust ex
 | `GET` | `/v1/session` | Read available datasets, views, and share policy. |
 | `GET` | `/v1/datasets` | List immutable snapshots. |
 | `GET` | `/v1/datasets/:id/traces` | List indexed trace summaries. |
-| `GET` | `/v1/datasets/:id/analysis-export` | Read normalized analysis tables for one immutable snapshot. |
+| `GET` | `/v1/datasets/:id/analysis-export` | Read a trace-bounded page of normalized analysis tables. |
 | `GET` | `/v1/traces/:id?dataset_id=:dataset` | Read one full or redacted trajectory. |
 | `GET` | `/v1/traces/:id/summary?dataset_id=:dataset` | Read one indexed trace summary. |
 | `GET` | `/v1/traces/:id/activity?dataset_id=:dataset` | Read the deterministic activity tree for one trajectory. |

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server"
 import * as z from "zod/v4"
 import { deriveTraceActivity } from "./activity.ts"
-import { createAnalysisExport } from "./analysis-export.ts"
+import { MAX_ANALYSIS_TRACE_LIMIT, createAnalysisExport } from "./analysis-export.ts"
 import { compactTrajectory } from "./compact.ts"
 import {
   QUERY_FIELDS,
@@ -60,20 +60,23 @@ export const createTraceMcpServer = (store: TraceStoreApi) => {
     inputSchema: z.object({
       dataset_id: z.string(),
       table: z.enum(analysisTables),
-      offset: z.number().int().min(0).default(0),
-      limit: z.number().int().min(1).max(1000).default(100)
+      trace_offset: z.number().int().min(0).default(0),
+      trace_limit: z.number().int().min(1).max(MAX_ANALYSIS_TRACE_LIMIT).default(10)
     })
-  }, async ({ dataset_id, table, offset, limit }) => {
-    const analysis = await createAnalysisExport(store, dataset_id)
+  }, async ({ dataset_id, table, trace_offset, trace_limit }) => {
+    const analysis = await createAnalysisExport(store, dataset_id, {
+      traceOffset: trace_offset,
+      traceLimit: trace_limit
+    })
     const rows = analysis.tables[table]
     return response({
       schema_version: analysis.schema_version,
       dataset_id,
       dataset_sha256: analysis.dataset.object_sha256,
       table,
-      total_rows: rows.length,
-      offset,
-      rows: rows.slice(offset, offset + limit)
+      page: analysis.page,
+      returned_rows: rows.length,
+      rows
     })
   })
 

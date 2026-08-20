@@ -76,13 +76,13 @@ The query engine reads stored summaries and performs no model call. Results are 
 
 ## Analysis export
 
-`GET /v1/datasets/:id/analysis-export` returns one deterministic JSON bundle for internal analysis. The bundle contains normalized `traces`, `steps`, `tool_calls`, `observations`, `checkpoint_results`, and `artifacts` tables. Each evidence row keeps its dataset ID and trace ID.
+`GET /v1/datasets/:id/analysis-export` returns one deterministic JSON page for internal analysis. The page contains normalized `traces`, `steps`, `tool_calls`, `observations`, `checkpoint_results`, and `artifacts` tables. Each evidence row keeps its dataset ID and trace ID.
 
 The trace table includes a path to the complete canonical trajectory. The other tables preserve messages, reasoning, structured tool arguments, tool results, recorded checkpoint rationales, and artifact references. This gives a notebook enough context to build a question-specific corpus and link any derived claim back to source evidence.
 
 The `checkpoint_results` table reports stored scorer output. A shared checkpoint ID is a rubric grouping. It is not a semantic failure cluster and does not imply validation by a practicing legal expert.
 
-The endpoint requires internal access and does not accept a share token. The response ETag is the immutable dataset object hash. Hex setup and table use are defined in [Hex integration](hex.md).
+The endpoint requires internal access and does not accept a share token. `trace_offset` selects the first trace and `trace_limit` selects up to 20 traces. The response includes `next_trace_offset` when another page exists. The response ETag combines the immutable dataset object hash with the page bounds. Hex setup and table use are defined in [Hex integration](hex.md).
 
 ## Views and sharing
 

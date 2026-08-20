@@ -31,7 +31,7 @@ checkpoint_results = explorer.tables["checkpoint_results"]
 artifacts = explorer.tables["artifacts"]
 ```
 
-Each export records the dataset manifest and content hash. A repeated request for the same dataset ID returns the same stored evidence and table order.
+Each export page records the dataset manifest, content hash, trace offset, and trace limit. The loader follows `next_trace_offset` and assembles every page. A repeated request for the same dataset ID and page returns the same stored evidence and table order.
 
 Use a trace ID from any table to load the complete canonical run or its hierarchical activity view:
 
@@ -78,4 +78,4 @@ Explorer must ingest source traces, convert them to canonical ATIF, store immuta
 
 Hex owns notebook execution, Python packages, question-specific feature construction, clustering, statistical checks, charts, and report composition. This split lets the analysis method change without changing the stored evidence.
 
-The JSON export is suitable for the current benchmark dataset. A later high-volume adapter can write the same table contract as Parquet in object storage and return signed snapshot URLs. Dataset IDs and trace IDs must remain stable across that adapter.
+The JSON export reads at most 20 canonical traces per request. The loader uses pages of 10 traces to bound Worker memory and response size. A later high-volume adapter can write the same table contract as Parquet in object storage and return signed snapshot URLs. Dataset IDs and trace IDs must remain stable across that adapter.

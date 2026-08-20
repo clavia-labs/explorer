@@ -164,19 +164,20 @@ export class TraceStore implements TraceStoreApi {
     return row === null ? undefined : JSON.parse(row.summary_json) as TraceSummary
   }
 
-  listTraces(datasetId: string): ReadonlyArray<AtifTrajectory> {
+  listTracesPage(datasetId: string, offset: number, limit: number): ReadonlyArray<AtifTrajectory> {
     if (this.getDataset(datasetId) === undefined) {
       throw new ContractError("DATASET_MISSING", `dataset ${datasetId} does not exist`)
     }
     return this.#database
-      .query<{ payload_json: string }, [string]>(
+      .query<{ payload_json: string }, [string, number, number]>(
         `SELECT objects.payload_json
            FROM dataset_traces
            JOIN objects USING (object_sha256)
           WHERE dataset_traces.dataset_id = ?
-          ORDER BY dataset_traces.trace_id`
+          ORDER BY dataset_traces.trace_id
+          LIMIT ? OFFSET ?`
       )
-      .all(datasetId)
+      .all(datasetId, limit, offset)
       .map((row) => JSON.parse(row.payload_json) as AtifTrajectory)
   }
 

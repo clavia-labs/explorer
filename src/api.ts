@@ -10,7 +10,11 @@ import { policyCapabilities, redactTrace } from "./redaction.ts"
 import { createShareToken, verifyShareToken, type ShareClaims } from "./share.ts"
 import type { TraceStoreApi } from "./store-api.ts"
 import { createDefaultView } from "./views.ts"
-import { createAnalysisExport } from "./analysis-export.ts"
+import {
+  DEFAULT_ANALYSIS_TRACE_LIMIT,
+  MAX_ANALYSIS_TRACE_LIMIT,
+  createAnalysisExport
+} from "./analysis-export.ts"
 
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status,
@@ -127,12 +131,27 @@ export const createApi = (store: TraceStoreApi) => {
         internal(access)
         const datasetId = decodeURIComponent(analysisExportMatch[1]!)
         datasetAccess(access, datasetId)
-        const analysis = await createAnalysisExport(store, datasetId)
-        const etag = `"${analysis.dataset.object_sha256}"`
-        const headers = {
+        const traceOffset = Number(url.searchParams.get("trace_offset") ?? 0)
+        const traceLimit = Number(url.searchParams.get("trace_limit") ?? DEFAULT_ANALYSIS_TRACE_LIMIT)
+        if (!Number.isSafeInteger(traceOffset) || traceOffset < 0) {
+          throw new ContractError("ANALYSIS_OFFSET", "trace_offset must be a non-negative integer")
+        }
+        if (!Number.isSafeInteger(traceLimit) || traceLimit < 1 || traceLimit > MAX_ANALYSIS_TRACE_LIMIT) {
+          throw new ContractError("ANALYSIS_LIMIT", `trace_limit must be between 1 and ${MAX_ANALYSIS_TRACE_LIMIT}`)
+        }
+        const analysis = await createAnalysisExport(store, datasetId, { traceOffset, traceLimit })
+        const etag = `"${analysis.dataset.object_sha256}:${traceOffset}:${traceLimit}"`
+        const headers = new Headers({
           "cache-control": "private, max-age=300",
           "content-type": "application/json",
-          etag
+          etag,
+          "x-dataset-sha256": analysis.dataset.object_sha256
+        })
+        if (analysis.page.next_trace_offset !== undefined) {
+          const next = new URL(url)
+          next.searchParams.set("trace_offset", String(analysis.page.next_trace_offset))
+          next.searchParams.set("trace_limit", String(traceLimit))
+          headers.set("link", `<${next}>; rel="next"`)
         }
         if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers })
         return new Response(JSON.stringify(analysis), { headers })

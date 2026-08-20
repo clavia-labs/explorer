@@ -4,10 +4,22 @@
   "title": "Clavia trace analysis export",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "dataset", "tables"],
+  "required": ["schema_version", "dataset", "page", "tables"],
   "properties": {
     "schema_version": { "const": "clavia.analysis-export/v1" },
     "dataset": { "$ref": "#/$defs/dataset" },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trace_offset", "trace_limit", "total_traces", "returned_traces"],
+      "properties": {
+        "trace_offset": { "type": "integer", "minimum": 0 },
+        "trace_limit": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "total_traces": { "type": "integer", "minimum": 0 },
+        "returned_traces": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "next_trace_offset": { "type": "integer", "minimum": 1 }
+      }
+    },
     "tables": {
       "type": "object",
       "additionalProperties": false,

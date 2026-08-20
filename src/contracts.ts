@@ -249,6 +249,13 @@ export interface AnalysisArtifactRow {
 export interface AnalysisExport {
   readonly schema_version: typeof ANALYSIS_EXPORT_VERSION
   readonly dataset: DatasetManifest
+  readonly page: {
+    readonly trace_offset: number
+    readonly trace_limit: number
+    readonly total_traces: number
+    readonly returned_traces: number
+    readonly next_trace_offset?: number
+  }
   readonly tables: {
     readonly traces: ReadonlyArray<AnalysisTraceRow>
     readonly steps: ReadonlyArray<AnalysisStepRow>

@@ -29,7 +29,7 @@ export interface TraceStoreApi {
   listDatasets(): Awaitable<ReadonlyArray<DatasetManifest>>
   getDataset(datasetId: string): Awaitable<DatasetManifest | undefined>
   listTraceSummaries(datasetId: string): Awaitable<ReadonlyArray<TraceSummary>>
-  listTraces(datasetId: string): Awaitable<ReadonlyArray<AtifTrajectory>>
+  listTracesPage(datasetId: string, offset: number, limit: number): Awaitable<ReadonlyArray<AtifTrajectory>>
   getTraceSummary(datasetId: string, traceId: string): Awaitable<TraceSummary | undefined>
   getTrace(datasetId: string, traceId: string): Awaitable<AtifTrajectory | undefined>
   listFailureEvidence(datasetId: string): Awaitable<ReadonlyArray<TraceFailureEvidence>>

@@ -24,14 +24,26 @@ def _get(base_url: str, path: str, token: str, params: dict[str, str] | None = N
 
 
 def load_explorer_dataset(base_url: str, dataset_id: str, token: str) -> ExplorerDataset:
-    payload = _get(
-        base_url,
-        f"/v1/datasets/{quote(dataset_id, safe='')}/analysis-export",
-        token,
-    )
+    rows: dict[str, list[dict[str, Any]]] = {}
+    manifest: dict[str, Any] | None = None
+    trace_offset = 0
+    while True:
+        payload = _get(
+            base_url,
+            f"/v1/datasets/{quote(dataset_id, safe='')}/analysis-export",
+            token,
+            params={"trace_offset": str(trace_offset), "trace_limit": "10"},
+        )
+        manifest = payload["dataset"]
+        for name, page_rows in payload["tables"].items():
+            rows.setdefault(name, []).extend(page_rows)
+        next_trace_offset = payload["page"].get("next_trace_offset")
+        if next_trace_offset is None:
+            break
+        trace_offset = next_trace_offset
     return ExplorerDataset(
-        manifest=payload["dataset"],
-        tables={name: pd.DataFrame(rows) for name, rows in payload["tables"].items()},
+        manifest=manifest or {},
+        tables={name: pd.DataFrame(table_rows) for name, table_rows in rows.items()},
     )
 
 

@@ -42,7 +42,7 @@ describe("Explorer MCP server", () => {
           arguments: {
             dataset_id: dataset.dataset_id,
             table: "checkpoint_results",
-            limit: 10
+            trace_limit: 10
           }
         }
       }))
