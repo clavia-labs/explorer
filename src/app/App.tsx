@@ -11,7 +11,6 @@ import {
   Database,
   FileLock2,
   Filter,
-  Focus,
   Gauge,
   Import,
   List,
@@ -41,13 +40,15 @@ import type {
   ViewCell
 } from "../contracts.ts"
 import { api, sharedSession } from "./api.ts"
+import { parseExplorerRoute, screenRoute, traceRoute, type ExplorerScreen } from "./routing.ts"
 
 const AnalysisCharts = lazy(() => import("./Charts.tsx"))
 
-type Screen = "analysis" | "traces"
+type Screen = ExplorerScreen
 type Theme = "light" | "dark"
 type TraceReaderMode = "activity" | "linear"
 type ShareState = "idle" | "creating" | "copied"
+type TraceGroupBy = "model" | "task" | "behavior" | "outcome"
 
 interface SessionResponse {
   readonly policy: PolicyCapabilities
@@ -102,6 +103,8 @@ const textOf = (message: AtifStep["message"]) => typeof message === "string"
 
 const shortModel = (model: string) => model.replace(/^.+\//, "").replace(/-/g, " ")
 
+const routeState = () => parseExplorerRoute(location.pathname, location.search, sharedSession)
+
 const tracePath = (datasetId: string, traceId: string) => {
   const path = `/v1/traces/${encodeURIComponent(traceId)}`
   return { path, query: `dataset_id=${encodeURIComponent(datasetId)}` }
@@ -137,7 +140,7 @@ const loadTraceStep = async (datasetId: string, traceId: string, stepId: number)
 function EmptyState({ onImport }: { readonly onImport: () => void }) {
   return <main className="empty-state">
     <div className="empty-mark"><Activity size={34} /></div>
-    <p className="eyebrow">TRACE INDEX / EMPTY STORE</p>
+    <p className="eyebrow">EXPLORER / EMPTY STORE</p>
     <h1>Turn agent runs into evidence.</h1>
     <p>Import ATIF, OpenTelemetry, Letta, Braintrust, Langfuse, or LegalBench traces to compare behavior and drill from phases into raw evidence.</p>
     <button className="primary-action" onClick={onImport}><Import size={17} /> Import a trace file</button>
@@ -217,33 +220,66 @@ function Findings({ analysis }: { readonly analysis: AnalysisData }) {
   </section>
 }
 
-function TraceTable({ traces, onSelect, limit = 80 }: { readonly traces: ReadonlyArray<TraceSummary>; readonly onSelect: (trace: TraceSummary) => void; readonly limit?: number }) {
+const traceOutcome = (trace: TraceSummary) => trace.strict_pass === true
+  ? "Passed"
+  : trace.strict_pass === false ? "Did not pass" : trace.status
+
+const traceGroupKey = (trace: TraceSummary, groupBy: TraceGroupBy) => {
+  if (groupBy === "model") return shortModel(trace.model)
+  if (groupBy === "task") return trace.task_id ?? trace.work_type ?? "Unclassified task"
+  if (groupBy === "behavior") return trace.behavior.replace(/-/g, " ")
+  return traceOutcome(trace)
+}
+
+function TraceTable({ traces, onSelect, limit }: { readonly traces: ReadonlyArray<TraceSummary>; readonly onSelect: (trace: TraceSummary) => void; readonly limit?: number }) {
   const [search, setSearch] = useState("")
-  const [behavior, setBehavior] = useState("all")
-  const behaviors = [...new Set(traces.map((trace) => trace.behavior))]
-  const visible = traces.filter((trace) =>
-    (behavior === "all" || trace.behavior === behavior)
-    && `${trace.title} ${trace.model} ${trace.task_id ?? ""}`.toLowerCase().includes(search.toLowerCase())
-  ).slice(0, limit)
+  const [groupBy, setGroupBy] = useState<TraceGroupBy>("model")
+  const [openGroups, setOpenGroups] = useState<ReadonlySet<string>>(() => new Set())
+  const matchesSearch = traces.filter((trace) => `${trace.title} ${trace.model} ${trace.task_id ?? ""} ${trace.work_type ?? ""} ${trace.behavior}`.toLowerCase().includes(search.toLowerCase()))
+  const visible = limit === undefined ? matchesSearch : matchesSearch.slice(0, limit)
+  const groups = useMemo(() => {
+    const indexed = new Map<string, Array<TraceSummary>>()
+    for (const trace of visible) {
+      const key = traceGroupKey(trace, groupBy)
+      indexed.set(key, [...indexed.get(key) ?? [], trace])
+    }
+    return [...indexed.entries()].sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))
+  }, [groupBy, visible])
+  const toggleGroup = (key: string) => {
+    const next = new Set(openGroups)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setOpenGroups(next)
+  }
   return <section className="trace-index-section">
     <div className="section-heading trace-heading">
-      <div><p className="eyebrow">TRACE INDEX</p><h2>Start with the shape. Open the evidence.</h2></div>
+      <div><p className="eyebrow">TRACE EVIDENCE</p><h2>Browse patterns before individual runs.</h2></div>
       <div className="trace-filters">
         <label><span className="sr-only">Search traces</span><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find task or model" /></label>
-        <label><span className="sr-only">Filter by behavior</span><Filter size={15} /><select value={behavior} onChange={(event) => setBehavior(event.target.value)}><option value="all">All patterns</option>{behaviors.map((value) => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label>
+        <label><Filter size={15} /><span className="filter-prefix">Group by</span><select aria-label="Group traces by" value={groupBy} onChange={(event) => { setGroupBy(event.target.value as TraceGroupBy); setOpenGroups(new Set()) }}><option value="model">Model</option><option value="task">Task</option><option value="behavior">Pattern</option><option value="outcome">Outcome</option></select><ChevronDown size={14} /></label>
       </div>
     </div>
-    <div className="trace-table-wrap">
-      <table className="trace-table">
-        <thead><tr><th scope="col">Trace</th><th scope="col">Pattern</th><th scope="col">Model</th><th scope="col">Actions</th><th scope="col">Outcome</th></tr></thead>
-        <tbody>{visible.map((trace) => <tr key={trace.trace_id}>
-          <td data-label="Trace"><button className="trace-open" onClick={() => onSelect(trace)}><span><strong>{trace.title}</strong><small>{trace.task_id ?? trace.trace_id.slice(0, 12)}</small></span><ArrowUpRight size={15} /></button></td>
-          <td data-label="Pattern"><span className="table-value"><i className={`behavior-dot behavior-${trace.behavior}`} aria-hidden="true" />{trace.behavior.replace(/-/g, " ")}</span></td>
-          <td data-label="Model" className="machine-cell">{shortModel(trace.model)}</td>
-          <td data-label="Actions" className="machine-cell">{trace.steps} steps · {trace.tool_calls} tools</td>
-          <td data-label="Outcome"><span className={`outcome outcome-${trace.strict_pass === true ? "pass" : trace.strict_pass === false ? "fail" : "unknown"}`}>{trace.strict_pass === true ? <CircleCheck size={14} /> : trace.strict_pass === false ? <CircleAlert size={14} /> : <Activity size={14} />}{trace.strict_pass === true ? "Passed" : trace.strict_pass === false ? "Failed" : trace.status}</span></td>
-        </tr>)}</tbody>
-      </table>
+    <div className="trace-groups">
+      {groups.map(([key, group], index) => {
+        const open = search.length > 0 || openGroups.has(key)
+        const passed = group.filter((trace) => trace.strict_pass === true).length
+        const assessed = group.filter((trace) => trace.strict_pass !== undefined).length
+        return <section className="trace-group" key={`${groupBy}-${key}`}>
+          <button className="trace-group-toggle" aria-expanded={open} onClick={() => toggleGroup(key)}>
+            <span className="group-index">{String(index + 1).padStart(2, "0")}</span>
+            <span className="group-copy"><strong>{key}</strong><small>{group.length} {group.length === 1 ? "trace" : "traces"}{assessed > 0 ? ` · ${Math.round((passed / assessed) * 100)}% pass` : ""}</small></span>
+            <span className="group-actions">{group.reduce((sum, trace) => sum + trace.steps + trace.tool_calls, 0)} actions</span>
+            <ChevronDown className={open ? "open" : ""} size={16} />
+          </button>
+          {open && <div className="trace-group-runs">{group.map((trace) => <button className="trace-run" onClick={() => onSelect(trace)} key={trace.trace_id}>
+            <span className={`run-status outcome-${trace.strict_pass === true ? "pass" : trace.strict_pass === false ? "fail" : "unknown"}`}>{trace.strict_pass === true ? <CircleCheck size={15} /> : trace.strict_pass === false ? <CircleAlert size={15} /> : <Activity size={15} />}<span className="sr-only">{traceOutcome(trace)}</span></span>
+            <span className="run-copy"><strong>{trace.title}</strong><small>{trace.task_id ?? trace.trace_id.slice(0, 12)}</small></span>
+            <span className="run-pattern">{trace.behavior.replace(/-/g, " ")}</span>
+            <span className="run-actions">{trace.steps} steps · {trace.tool_calls} tools</span>
+            <ArrowUpRight size={15} />
+          </button>)}</div>}
+        </section>
+      })}
       {visible.length === 0 && <p className="no-results">No traces match this filter.</p>}
     </div>
   </section>
@@ -408,7 +444,6 @@ function ViewReport({ view, dataset, traces, policy, onSelect }: {
         ? <ReportChart cell={cell} datasetId={dataset.dataset_id} key={`${cell.kind}-${cell.title}`} />
         : <ReportTraceList cell={cell} traces={traces} onSelect={onSelect} key={`${cell.kind}-${cell.title}`} />
     )}</div>
-    <footer><span>CLAVIA TRACE / SIGNED READ-ONLY VIEW</span><span>{view.object_sha256.slice(0, 16)} · {dataset.dataset_id}</span></footer>
   </main>
 }
 
@@ -557,7 +592,7 @@ function ActivityTurn({ node, datasetId, traceId, open, onToggle }: {
   </article>
 }
 
-function ActivityPhase({ phase, index, datasetId, traceId, open, openTurns, visibleTurns, onToggle, onToggleTurn, onFocus }: {
+function ActivityPhase({ phase, index, datasetId, traceId, open, openTurns, visibleTurns, onToggle, onToggleTurn }: {
   readonly phase: TraceActivityNode
   readonly index: number
   readonly datasetId: string
@@ -567,7 +602,6 @@ function ActivityPhase({ phase, index, datasetId, traceId, open, openTurns, visi
   readonly visibleTurns: ReadonlyArray<TraceActivityNode>
   readonly onToggle: (nodeId: string, open: boolean) => void
   readonly onToggleTurn: (nodeId: string, open: boolean) => void
-  readonly onFocus: (phase: TraceActivityNode) => void
 }) {
   return <section className={`activity-phase activity-phase-${phase.category} ${open ? "open" : ""}`}>
     <header className="activity-phase-head">
@@ -578,7 +612,6 @@ function ActivityPhase({ phase, index, datasetId, traceId, open, openTurns, visi
         <span className="phase-metrics"><strong>{phase.step_count} {phase.step_count === 1 ? "turn" : "turns"}</strong><small>{phase.tool_call_count} tool {phase.tool_call_count === 1 ? "call" : "calls"} · {duration(phase.duration_ms)}</small></span>
         <ChevronDown className={open ? "open" : ""} size={16} />
       </button>
-      <button className="phase-focus" aria-label={`Focus on ${phase.label}`} title={`Focus on ${phase.label}`} onClick={() => onFocus(phase)}><Focus size={15} /></button>
     </header>
     {open && <div className="activity-turns">
       {visibleTurns.map((turn) => <ActivityTurn node={turn} datasetId={datasetId} traceId={traceId} open={openTurns.has(turn.node_id)} onToggle={onToggleTurn} key={turn.node_id} />)}
@@ -591,7 +624,6 @@ function ActivityExplorer({ activity, datasetId, traceId }: { readonly activity:
   const phases = activity.root.children
   const [openPhases, setOpenPhases] = useState<ReadonlySet<string>>(() => new Set())
   const [openTurns, setOpenTurns] = useState<ReadonlySet<string>>(() => new Set())
-  const [focusedPhase, setFocusedPhase] = useState<string>()
   const [query, setQuery] = useState("")
   const normalizedQuery = query.trim().toLowerCase()
   const matches = useMemo(() => new Map(phases.map((phase) => {
@@ -601,10 +633,7 @@ function ActivityExplorer({ activity, datasetId, traceId }: { readonly activity:
       : phase.children.filter((turn) => `${turn.label} ${turn.summary} ${turn.tools.join(" ")}`.toLowerCase().includes(normalizedQuery))
     return [phase.node_id, turns] as const
   })), [normalizedQuery, phases])
-  const visiblePhases = phases.filter((phase) =>
-    (focusedPhase === undefined || phase.node_id === focusedPhase)
-    && (normalizedQuery.length === 0 || (matches.get(phase.node_id)?.length ?? 0) > 0)
-  )
+  const visiblePhases = phases.filter((phase) => normalizedQuery.length === 0 || (matches.get(phase.node_id)?.length ?? 0) > 0)
   const matchCount = normalizedQuery.length === 0
     ? activity.root.step_count
     : visiblePhases.reduce((sum, phase) => sum + (matches.get(phase.node_id)?.length ?? 0), 0)
@@ -614,12 +643,6 @@ function ActivityExplorer({ activity, datasetId, traceId }: { readonly activity:
     if (nextOpen) next.add(nodeId)
     else next.delete(nodeId)
     setter(next)
-  }
-  const focus = (phase: TraceActivityNode) => {
-    setFocusedPhase(phase.node_id)
-    const next = new Set(openPhases)
-    next.add(phase.node_id)
-    setOpenPhases(next)
   }
   const showTurns = () => setOpenPhases(new Set(visiblePhases.map((phase) => phase.node_id)))
   const collapse = () => {
@@ -632,24 +655,14 @@ function ActivityExplorer({ activity, datasetId, traceId }: { readonly activity:
       <div><span>BEHAVIOR SHAPE</span><strong>{activity.root.summary}</strong></div>
       <small>{phases.length} phases · {activity.root.step_count} turns · {activity.root.tool_call_count} tool calls</small>
     </div>
-    <nav className="phase-ribbon" aria-label="Trajectory phase summary">
-      {phases.map((phase, index) => <button className={focusedPhase === phase.node_id ? "active" : ""} aria-current={focusedPhase === phase.node_id ? "true" : undefined} style={{ flexGrow: Math.max(phase.step_count, 1) }} onClick={() => focus(phase)} title={`${phase.label}: ${phase.summary}`} key={phase.node_id}>
-        <span>{String(index + 1).padStart(2, "0")}</span><strong>{phase.label.replace(/, pass \d+$/, "")}</strong><small>{phase.step_count}</small>
-      </button>)}
-    </nav>
     <div className="activity-controls">
       <div className="activity-search" role="search"><Search size={15} /><input aria-label="Search activity" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search phases, turns, or tools" />{query.length > 0 && <button aria-label="Clear activity search" onClick={() => setQuery("")}><X size={14} /></button>}</div>
       <div className="activity-control-buttons" aria-label="Activity tree detail controls">
-        <button onClick={collapse}><List size={15} /> Overview</button>
-        <button onClick={showTurns}><TreePine size={15} /> Show turns</button>
+        <button onClick={collapse}><List size={15} /> Collapse all</button>
+        <button onClick={showTurns}><TreePine size={15} /> Expand groups</button>
       </div>
     </div>
-    <div className="activity-context" aria-live="polite">
-      {focusedPhase === undefined
-        ? <span>{normalizedQuery.length === 0 ? "All phases" : `${matchCount} matching ${matchCount === 1 ? "turn" : "turns"}`}</span>
-        : <><span>Whole trace <ChevronDown size={12} /> {phases.find((phase) => phase.node_id === focusedPhase)?.label}</span><button onClick={() => setFocusedPhase(undefined)}>Show whole trace</button></>}
-      <small>Open a phase, then a turn, to reach the raw ATIF leaf.</small>
-    </div>
+    <div className="activity-context" aria-live="polite"><span>{normalizedQuery.length === 0 ? `${phases.length} activity groups` : `${matchCount} matching ${matchCount === 1 ? "turn" : "turns"}`}</span><small>Expand a group to see its turns and raw evidence.</small></div>
     <div className="activity-tree">
       {visiblePhases.map((phase) => <ActivityPhase
         phase={phase}
@@ -661,7 +674,6 @@ function ActivityExplorer({ activity, datasetId, traceId }: { readonly activity:
         visibleTurns={matches.get(phase.node_id) ?? []}
         onToggle={(nodeId, nextOpen) => toggle(setOpenPhases, openPhases, nodeId, nextOpen)}
         onToggleTurn={(nodeId, nextOpen) => toggle(setOpenTurns, openTurns, nodeId, nextOpen)}
-        onFocus={focus}
         key={phase.node_id}
       />)}
       {visiblePhases.length === 0 && <div className="activity-empty-search"><Search size={18} /><strong>No activity matched.</strong><span>Search by a phase name, turn label, or tool.</span><button onClick={() => setQuery("")}>Clear search</button></div>}
@@ -670,18 +682,19 @@ function ActivityExplorer({ activity, datasetId, traceId }: { readonly activity:
   </div>
 }
 
-function TraceDetail({ datasetId, activity, metadata, summary, peers, policy, onBack, onSelect }: {
+function TraceDetail({ datasetId, activity, metadata, summary, peers, policy, backLabel, onBack, onSelect }: {
   readonly datasetId: string
   readonly activity: TraceActivity
   readonly metadata: ClaviaTraceMetadata
   readonly summary: TraceSummary
   readonly peers: ReadonlyArray<TraceSummary>
   readonly policy: PolicyCapabilities
+  readonly backLabel: string
   readonly onBack: () => void
   readonly onSelect: (summary: TraceSummary) => void
 }) {
   const tags = metadata.behavior.tags
-  const visiblePeers = [summary, ...peers.filter((peer) => peer.trace_id !== summary.trace_id)].slice(0, 16)
+  const visiblePeers = [summary, ...peers.filter((peer) => peer.trace_id !== summary.trace_id && peer.model === summary.model)].slice(0, 8)
   const outcomeClass = summary.strict_pass === true ? "pass" : summary.strict_pass === false ? "fail" : "unknown"
   const [readerMode, setReaderMode] = useState<TraceReaderMode>("activity")
   const [linearTrace, setLinearTrace] = useState<AtifTrajectory>()
@@ -702,14 +715,14 @@ function TraceDetail({ datasetId, activity, metadata, summary, peers, policy, on
   }
   return <main className="trace-detail">
     <div className="trace-detail-top">
-      <button className="back-button" onClick={onBack}><ArrowLeft size={16} /> Analysis</button>
+      <button className="back-button" onClick={onBack}><ArrowLeft size={16} /> {backLabel}</button>
       <div className="trace-title"><p className="eyebrow">TRAJECTORY / {summary.task_id ?? summary.trace_id.slice(-12)}</p><h1>{metadata.title}</h1><p>{shortModel(summary.model)} · {summary.behavior.replace(/-/g, " ")} · {summary.steps} recorded steps</p></div>
       <div className={`trace-verdict ${outcomeClass}`}>{summary.strict_pass === true ? <CircleCheck size={18} /> : summary.strict_pass === false ? <CircleAlert size={18} /> : <Activity size={18} />}<div><span>STRICT REVIEW</span><strong>{summary.strict_pass === undefined ? summary.status : summary.strict_pass ? "Passed" : "Did not pass"}</strong></div></div>
     </div>
     {!policy.reasoning && <div className="policy-notice"><FileLock2 size={16} />This shared view preserves action shape while withholding reasoning and sensitive content under the {policy.policy} policy.</div>}
     <div className="trace-layout">
-      <aside className="peer-list" aria-label="Nearby traces">
-        <div className="aside-title"><span>NEARBY TRACES</span><small>{visiblePeers.length} visible</small></div>
+      <aside className="peer-list" aria-label="Same model traces">
+        <div className="aside-title"><span>SAME MODEL</span><small>{visiblePeers.length} traces</small></div>
         {visiblePeers.map((peer) => <button className={peer.trace_id === summary.trace_id ? "active" : ""} aria-current={peer.trace_id === summary.trace_id ? "true" : undefined} onClick={() => onSelect(peer)} key={peer.trace_id}>
           <span className={peer.strict_pass ? "peer-pass" : "peer-fail"} />
           <div><strong>{peer.task_id ?? peer.title}</strong><small>{shortModel(peer.model)}</small></div>
@@ -756,7 +769,7 @@ export default function App() {
   const [traces, setTraces] = useState<ReadonlyArray<TraceSummary>>([])
   const [analysis, setAnalysis] = useState<AnalysisData>()
   const [selected, setSelected] = useState<TraceSelection>()
-  const [screen, setScreen] = useState<Screen>("analysis")
+  const [screen, setScreen] = useState<Screen>(() => routeState().screen)
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("clavia-trace-theme")
     if (saved === "light" || saved === "dark") return saved
@@ -793,14 +806,15 @@ export default function App() {
   useEffect(() => {
     void api<SessionResponse>("/v1/session").then(async (loaded) => {
       setSession(loaded)
+      if (!sharedSession && location.pathname === "/") history.replaceState(null, "", "/analysis")
       const first = loaded.dataset ?? loaded.datasets?.[0]
       if (first === undefined) {
         setLoading(false)
         return
       }
       setDataset(first)
-      const requestedTrace = new URLSearchParams(location.search).get("trace")
-      if (requestedTrace !== null) {
+      const requestedTrace = routeState().traceId
+      if (requestedTrace !== undefined) {
         try {
           setSelected(await loadRequestedTrace(first.dataset_id, requestedTrace))
         } catch (caught) {
@@ -818,12 +832,31 @@ export default function App() {
     localStorage.setItem("clavia-trace-theme", theme)
   }, [theme])
 
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = routeState()
+      setScreen(route.screen)
+      if (route.traceId === undefined) {
+        setSelected(undefined)
+        return
+      }
+      if (dataset !== undefined && route.traceId !== selected?.summary.trace_id) {
+        setLoading(true)
+        void loadRequestedTrace(dataset.dataset_id, route.traceId).then(setSelected).catch((caught) => {
+          setError(caught instanceof Error ? caught.message : "Unable to load requested trace")
+        }).finally(() => setLoading(false))
+      }
+    }
+    addEventListener("popstate", syncRoute)
+    return () => removeEventListener("popstate", syncRoute)
+  }, [dataset, selected?.summary.trace_id])
+
   const selectTrace = async (summary: TraceSummary) => {
     if (dataset === undefined) return
     setLoading(true)
     try {
       setSelected(await loadTraceSelection(dataset.dataset_id, summary))
-      history.replaceState(null, "", `${sharedSession ? location.pathname : "/"}?trace=${encodeURIComponent(summary.trace_id)}`)
+      history.pushState(null, "", traceRoute(summary.trace_id, sharedSession ? location.pathname : undefined))
       scrollTo({ top: 0 })
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load trace") }
     finally { setLoading(false) }
@@ -845,8 +878,6 @@ export default function App() {
   const view = views.find((candidate) => candidate.dataset_id === dataset?.dataset_id)
   const policy = session?.policy
   const datasets = session?.dataset === undefined ? session?.datasets ?? [] : [session.dataset]
-  const totalActions = useMemo(() => traces.reduce((sum, trace) => sum + trace.steps + trace.tool_calls, 0), [traces])
-
   const createPartnerShare = async () => {
     if (view === undefined || shareState !== "idle") return
     setShareState("creating")
@@ -869,13 +900,13 @@ export default function App() {
   const navigate = (next: Screen) => {
     setSelected(undefined)
     setScreen(next)
-    history.replaceState(null, "", sharedSession ? location.pathname : "/")
+    history.pushState(null, "", screenRoute(next, sharedSession ? location.pathname : undefined))
     scrollTo({ top: 0 })
   }
 
   function AppRail() {
     return <aside className="app-rail">
-      <button className="brand" aria-label="Open analysis" onClick={() => navigate("analysis")}><span className="brand-mark">C</span><span><strong>clavia</strong><small>trace index</small></span></button>
+      <button className="brand" aria-label="Open analysis" onClick={() => navigate("analysis")}><span className="brand-mark">C</span><span><strong>clavia</strong><small>explorer</small></span></button>
       <nav aria-label="Primary navigation">
         <button className={screen === "analysis" && selected === undefined ? "active" : ""} aria-current={screen === "analysis" && selected === undefined ? "page" : undefined} onClick={() => navigate("analysis")}><Activity size={17} /><span>Analysis</span></button>
         <button className={screen === "traces" && selected === undefined ? "active" : ""} aria-current={screen === "traces" && selected === undefined ? "page" : undefined} onClick={() => navigate("traces")}><ListTree size={17} /><span>Traces</span><em>{traces.length}</em></button>
@@ -891,7 +922,7 @@ export default function App() {
     const title = selected?.summary.task_id
       ?? (sharedSession && session?.view !== undefined
         ? session.view.title
-        : screen === "analysis" ? "Behavior analysis" : "Trace index")
+        : screen === "analysis" ? "Behavior analysis" : "All traces")
     return <header className="workbar">
       <button className="mobile-brand" aria-label="Open analysis" onClick={() => navigate("analysis")}><span>C</span> clavia</button>
       <div className="workbar-path"><span>{selected === undefined ? screen : "trace"}</span><strong>{title}</strong></div>
@@ -915,11 +946,11 @@ export default function App() {
       <div id="main-content" tabIndex={-1}>{session !== undefined && dataset === undefined && !loading
         ? <EmptyState onImport={() => fileInput.current?.click()} />
         : selected !== undefined && policy !== undefined && dataset !== undefined
-          ? <TraceDetail key={selected.summary.trace_id} datasetId={dataset.dataset_id} activity={selected.activity} metadata={selected.metadata} summary={selected.summary} peers={traces} policy={policy} onBack={() => navigate("analysis")} onSelect={(summary) => void selectTrace(summary)} />
+          ? <TraceDetail key={selected.summary.trace_id} datasetId={dataset.dataset_id} activity={selected.activity} metadata={selected.metadata} summary={selected.summary} peers={traces} policy={policy} backLabel={screen === "traces" ? "All traces" : "Analysis"} onBack={() => navigate(screen)} onSelect={(summary) => void selectTrace(summary)} />
           : sharedSession && session?.view !== undefined && dataset !== undefined && policy !== undefined
             ? <ViewReport view={session.view} dataset={dataset} traces={traces} policy={policy} onSelect={(summary) => void selectTrace(summary)} />
           : dataset !== undefined && analysis !== undefined
-            ? <main className="analysis-main">{screen === "analysis" ? <AnalysisScreen dataset={dataset} traces={traces} analysis={analysis} onSelect={(summary) => void selectTrace(summary)} /> : <TraceTable traces={traces} onSelect={(summary) => void selectTrace(summary)} />}<footer><span>CLAVIA TRACE</span><span>{compactNumber(totalActions)} steps and actions indexed · {dataset.object_sha256.slice(0, 16)}</span></footer></main>
+            ? <main className="analysis-main">{screen === "analysis" ? <AnalysisScreen dataset={dataset} traces={traces} analysis={analysis} onSelect={(summary) => void selectTrace(summary)} /> : <TraceTable traces={traces} onSelect={(summary) => void selectTrace(summary)} />}</main>
             : null}</div>
     </div>
   </div>
