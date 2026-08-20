@@ -1,10 +1,12 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { createApi } from "./api.ts"
+import { passwordGuard } from "./access.ts"
 import { D1TraceStore } from "./d1-store.ts"
 
 interface Env {
   readonly ASSETS: Fetcher
+  readonly EXPLORER_PASSWORD?: string
   readonly SHARE_SECRET: string
   readonly TRACE_DB: D1Database
 }
@@ -18,6 +20,8 @@ export default {
         { headers: { "cache-control": "no-store" } },
       )
     }
+    const access = await passwordGuard(request, env.EXPLORER_PASSWORD)
+    if (access !== undefined) return access
     if (url.pathname.startsWith("/v1/")) {
       return createApi(new D1TraceStore(env.TRACE_DB, env.SHARE_SECRET))(request)
     }

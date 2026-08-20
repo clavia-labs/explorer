@@ -1,4 +1,5 @@
 import { resolve, sep } from "node:path"
+import { passwordGuard } from "./access.ts"
 import { createApi } from "./api.ts"
 import { TraceStore } from "./store.ts"
 
@@ -59,8 +60,10 @@ const server = Bun.serve({
   port,
   async fetch(request) {
     const url = new URL(request.url)
-    if (url.pathname.startsWith("/v1/")) return compressed(request, await api(request))
     if (url.pathname === "/health") return Response.json({ ok: true })
+    const access = await passwordGuard(request, process.env.EXPLORER_PASSWORD)
+    if (access !== undefined) return access
+    if (url.pathname.startsWith("/v1/")) return compressed(request, await api(request))
     const requested = resolve(dist, url.pathname.slice(1))
     if (requested.startsWith(`${dist}${sep}`)) {
       const file = Bun.file(requested)
