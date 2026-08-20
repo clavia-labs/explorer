@@ -3,6 +3,7 @@ import type {
   DatasetManifest,
   QueryResult,
   TraceQuery,
+  TraceFailureEvidence,
   TraceSummary,
   TraceView,
   ViewCell
@@ -30,6 +31,7 @@ export interface TraceStoreApi {
   listTraceSummaries(datasetId: string): Awaitable<ReadonlyArray<TraceSummary>>
   getTraceSummary(datasetId: string, traceId: string): Awaitable<TraceSummary | undefined>
   getTrace(datasetId: string, traceId: string): Awaitable<AtifTrajectory | undefined>
+  listFailureEvidence(datasetId: string): Awaitable<ReadonlyArray<TraceFailureEvidence>>
   query(query: TraceQuery): Awaitable<QueryResult>
   putView(options: PutViewOptions): Awaitable<TraceView>
   getView(viewId: string): Awaitable<TraceView | undefined>

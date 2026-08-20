@@ -6,6 +6,7 @@ import {
   type AtifTrajectory,
   type DatasetManifest,
   type TraceQuery,
+  type TraceFailureEvidence,
   type TraceSummary,
   type TraceView
 } from "./contracts.ts"
@@ -118,6 +119,24 @@ export class D1TraceStore implements TraceStoreApi {
         WHERE dataset_traces.dataset_id = ? AND dataset_traces.trace_id = ?`
     ).bind(datasetId, traceId).first<{ readonly payload_json: string }>()
     return row === null ? undefined : parse<AtifTrajectory>(row.payload_json)
+  }
+
+  async listFailureEvidence(datasetId: string): Promise<ReadonlyArray<TraceFailureEvidence>> {
+    if (await this.getDataset(datasetId) === undefined) {
+      throw new ContractError("DATASET_MISSING", `dataset ${datasetId} does not exist`)
+    }
+    const rows = await this.database.prepare(
+      `SELECT dataset_traces.summary_json,
+              json_extract(objects.payload_json, '$.extra.clavia.failure_modes') AS failure_modes_json
+         FROM dataset_traces
+         JOIN objects USING (object_sha256)
+        WHERE dataset_traces.dataset_id = ?
+        ORDER BY dataset_traces.trace_id`
+    ).bind(datasetId).all<{ readonly summary_json: string; readonly failure_modes_json: string | null }>()
+    return rows.results.map((row) => ({
+      summary: parse<TraceSummary>(row.summary_json),
+      failure_modes: row.failure_modes_json === null ? [] : parse(row.failure_modes_json)
+    }))
   }
 
   async query(query: TraceQuery) {

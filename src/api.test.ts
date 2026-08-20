@@ -17,6 +17,7 @@ interface ApiBody {
   readonly activity: { readonly root: { readonly children: ReadonlyArray<{ readonly category: string }> } }
   readonly summary: { readonly trace_id: string }
   readonly step: { readonly step_id: number }
+  readonly clusters: ReadonlyArray<{ readonly id: string; readonly trace_count: number }>
 }
 
 const apiBody = (response: Response) => response.json() as Promise<ApiBody>
@@ -47,6 +48,13 @@ describe("trace API", () => {
         })
       }))
       expect((await apiBody(query)).rows[0]).toMatchObject({ behavior: "direct-builder", trace_count: 1 })
+
+      const clusters = await api(new Request(
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/failure-clusters`
+      ))
+      expect((await apiBody(clusters)).clusters).toEqual([
+        expect.objectContaining({ id: "C-004", trace_count: 1 })
+      ])
 
       const shared = await api(new Request("http://trace.local/v1/shares", {
         method: "POST",
@@ -104,6 +112,10 @@ describe("trace API", () => {
         `http://trace.local/v1/traces/fixture-trace?dataset_id=${dataset.dataset_id}&share=${token}`
       ))
       expect(trace.status).toBe(403)
+      const clusters = await api(new Request(
+        `http://trace.local/v1/datasets/${dataset.dataset_id}/failure-clusters?share=${token}`
+      ))
+      expect(clusters.status).toBe(403)
       store.close()
     } finally {
       await rm(directory, { recursive: true, force: true })

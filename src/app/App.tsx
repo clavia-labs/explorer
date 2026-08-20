@@ -31,6 +31,8 @@ import type {
   AtifTrajectory,
   ClaviaTraceMetadata,
   DatasetManifest,
+  FailureAnalysis,
+  FailureCluster,
   PolicyCapabilities,
   QueryResult,
   TraceActivity,
@@ -41,6 +43,7 @@ import type {
 } from "../contracts.ts"
 import { api, sharedSession } from "./api.ts"
 import { parseExplorerRoute, screenRoute, traceRoute, type ExplorerScreen } from "./routing.ts"
+import { modelPerformance } from "../model-analysis.ts"
 
 const AnalysisCharts = lazy(() => import("./Charts.tsx"))
 
@@ -60,6 +63,7 @@ interface SessionResponse {
 
 interface AnalysisData {
   readonly behaviors: QueryResult
+  readonly failures: FailureAnalysis
   readonly models: QueryResult
   readonly tools: QueryResult
 }
@@ -217,6 +221,90 @@ function Findings({ analysis }: { readonly analysis: AnalysisData }) {
       <strong>{finding.title.replace(/-/g, " ")}</strong>
       <p>{finding.copy}</p>
     </li>)}</ol>
+  </section>
+}
+
+const scoreLabel = (value: number | undefined) => value === undefined ? "n/a" : `${Math.round(value * 100)}%`
+
+const filteredCluster = (cluster: FailureCluster, model: string) => {
+  const traces = cluster.traces.filter((trace) => trace.model === model)
+  const behaviors = new Map<string, number>()
+  for (const trace of traces) {
+    const behavior = trace.behavior
+    behaviors.set(behavior, (behaviors.get(behavior) ?? 0) + 1)
+  }
+  return {
+    cluster,
+    traces,
+    dominantBehavior: [...behaviors.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0]
+  }
+}
+
+function ModelEvidence({ traces, failures, onSelect }: {
+  readonly traces: ReadonlyArray<TraceSummary>
+  readonly failures: FailureAnalysis
+  readonly onSelect: (trace: TraceSummary) => void
+}) {
+  const models = useMemo(() => modelPerformance(traces), [traces])
+  const [selectedModel, setSelectedModel] = useState(() => models[0]?.model ?? "")
+  const [selectedFailure, setSelectedFailure] = useState<string>()
+  const selected = models.find((model) => model.model === selectedModel) ?? models[0]
+  if (selected === undefined) return null
+  const modelClusters = failures.clusters
+    .map((cluster) => filteredCluster(cluster, selected.model))
+    .filter((cluster) => cluster.traces.length > 0)
+    .sort((left, right) => right.traces.length - left.traces.length || left.cluster.id.localeCompare(right.cluster.id))
+  const activeCluster = modelClusters.find((cluster) => cluster.cluster.id === selectedFailure) ?? modelClusters[0]
+  const selectedModelTraces = traces.filter((trace) => trace.model === selected.model)
+  const traceById = new Map(selectedModelTraces.map((trace) => [trace.trace_id, trace]))
+  const failedTraces = selectedModelTraces.filter((trace) => trace.strict_pass === false).length
+  const modelFailureCount = modelClusters.reduce((sum, cluster) => sum + cluster.traces.length, 0)
+
+  return <section className="model-evidence" aria-labelledby="model-evidence-title">
+    <div className="section-heading">
+      <div><p className="eyebrow">MODEL EVIDENCE</p><h2 id="model-evidence-title">Compare every model, then open the proof.</h2></div>
+      <p className="section-lede">The report includes task-type model performance validated by practicing legal experts, model strengths and failure modes, and annotated traces with concrete examples.</p>
+    </div>
+    <div className="model-matrix" role="region" aria-label="Performance comparison for every model" tabIndex={0}>
+      <table><thead><tr><th scope="col">Model</th><th scope="col">Runs</th><th scope="col">Strict</th><th scope="col">Checkpoints</th><th scope="col">Task strength</th><th scope="col">Dominant pattern</th></tr></thead>
+      <tbody>{models.map((model, index) => <tr className={model.model === selected.model ? "active" : ""} key={model.model}>
+        <th scope="row"><button className="model-name" aria-pressed={model.model === selected.model} onClick={() => { setSelectedModel(model.model); setSelectedFailure(undefined) }}><small>{String(index + 1).padStart(2, "0")}</small><strong>{shortModel(model.model)}</strong></button></th>
+        <td data-label="Runs">{model.trace_count}</td>
+        <td data-label="Strict">{scoreLabel(model.pass_rate)}</td>
+        <td data-label="Checkpoints">{scoreLabel(model.checkpoint_rate)}</td>
+        <td className="model-task-strength" data-label="Task strength">{model.strongest_task === undefined ? "n/a" : `${model.strongest_task.task_type} · ${scoreLabel(model.strongest_task.checkpoint_rate)}`}</td>
+        <td className="model-pattern" data-label="Dominant pattern">{model.dominant_behavior.replace(/-/g, " ")}</td>
+      </tr>)}</tbody></table>
+    </div>
+    <div className="model-dossier">
+      <header className="model-dossier-head">
+        <div><p className="eyebrow">SELECTED MODEL</p><h3>{shortModel(selected.model)}</h3><small>{selected.model}</small></div>
+        <dl><div><dt>Traces</dt><dd>{selected.trace_count}</dd></div><div><dt>Strict pass</dt><dd>{scoreLabel(selected.pass_rate)}</dd></div><div><dt>Expert checkpoints</dt><dd>{scoreLabel(selected.checkpoint_rate)}</dd></div><div><dt>Failed runs</dt><dd>{failedTraces}</dd></div></dl>
+      </header>
+      <div className="model-profile">
+        <section aria-labelledby="task-performance-title"><div className="subsection-title"><span>01</span><div><p>MODEL STRENGTHS</p><h4 id="task-performance-title">Task-type performance</h4></div></div>
+          <div className="task-performance-list">{selected.task_types.map((task) => <div className="task-performance-row" key={task.task_type}>
+            <div><strong>{task.task_type}</strong><small>{task.trace_count} traces</small></div><span><i style={{ width: `${Math.max((task.checkpoint_rate ?? 0) * 100, 2)}%` }} /></span><b>{scoreLabel(task.checkpoint_rate)}</b><small>{scoreLabel(task.pass_rate)} strict</small>
+          </div>)}</div>
+          <p className="strength-readout"><strong>Strongest task:</strong> {selected.strongest_task?.task_type ?? "No assessed task"}. <strong>Dominant execution pattern:</strong> {selected.dominant_behavior.replace(/-/g, " ")}.</p>
+        </section>
+        <section aria-labelledby="failure-cluster-title"><div className="subsection-title"><span>02</span><div><p>FAILURE MODES</p><h4 id="failure-cluster-title">Clustered expert findings</h4></div></div>
+          <p className="cluster-summary">{modelClusters.length} failure clusters across {modelFailureCount} trace attributions. Select a cluster to see its dominant behavior and contributing runs.</p>
+          {modelClusters.length === 0 ? <div className="cluster-empty"><CircleCheck size={17} /><span>No failed checkpoint clusters were recorded for this model.</span></div> : <div className="failure-cluster-layout">
+            <div className="failure-cluster-list">{modelClusters.map((item) => <button className={item.cluster.id === activeCluster?.cluster.id ? "active" : ""} aria-pressed={item.cluster.id === activeCluster?.cluster.id} onClick={() => setSelectedFailure(item.cluster.id)} key={item.cluster.id}>
+              <span><strong>{item.cluster.id}</strong><small>{item.traces.length} {item.traces.length === 1 ? "trace" : "traces"}</small></span><span>{item.dominantBehavior?.replace(/-/g, " ") ?? "mixed pattern"}</span><ChevronDown size={15} />
+            </button>)}</div>
+            {activeCluster !== undefined && <div className="cluster-evidence">
+              <header><div><span>ACTIVE CLUSTER</span><strong>{activeCluster.cluster.id}</strong></div><small>{activeCluster.traces.length} of {selected.trace_count} model traces</small></header>
+              {activeCluster.cluster.examples.find((example) => example.model === selected.model)?.justification !== undefined && <blockquote><span>EXPERT REVIEW SIGNAL</span><p>{activeCluster.cluster.examples.find((example) => example.model === selected.model)?.justification}</p></blockquote>}
+              <div className="cluster-traces">{activeCluster.traces.map((trace) => <button onClick={() => { const summary = traceById.get(trace.trace_id); if (summary !== undefined) onSelect(summary) }} key={trace.trace_id}>
+                <span className="cluster-trace-status"><CircleAlert size={14} /><span className="sr-only">Failed checkpoint</span></span><span><strong>{trace.title}</strong><small>{trace.task_id ?? "Unclassified task"} · {trace.behavior.replace(/-/g, " ")}</small></span><ArrowUpRight size={14} />
+              </button>)}</div>
+            </div>}
+          </div>}
+        </section>
+      </div>
+    </div>
   </section>
 }
 
@@ -476,6 +564,7 @@ function AnalysisScreen({ dataset, traces, analysis, onSelect }: {
     </section>
     <BehaviorAnalysis data={analysis.behaviors} />
     <Suspense fallback={<div className="analysis-grid"><div className="chart-skeleton" /><div className="chart-skeleton" /></div>}><AnalysisCharts models={analysis.models} tools={analysis.tools} /></Suspense>
+    <ModelEvidence traces={traces} failures={analysis.failures} onSelect={onSelect} />
     <Findings analysis={analysis} />
     <TraceTable traces={traces} onSelect={onSelect} limit={12} />
   </>
@@ -790,14 +879,15 @@ export default function App() {
         setAnalysis(undefined)
         return listed.traces
       }
-      const [listed, behaviors, models, tools] = await Promise.all([
+      const [listed, behaviors, failures, models, tools] = await Promise.all([
         api<{ readonly traces: ReadonlyArray<TraceSummary> }>(`/v1/datasets/${encodeURIComponent(next.dataset_id)}/traces`),
         api<QueryResult>("/v1/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataset_id: next.dataset_id, group_by: "behavior", metrics: ["trace_count", "pass_rate", "avg_tool_calls"], order_by: { metric: "trace_count", direction: "desc" } }) }),
+        api<FailureAnalysis>(`/v1/datasets/${encodeURIComponent(next.dataset_id)}/failure-clusters`),
         api<QueryResult>("/v1/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataset_id: next.dataset_id, group_by: "model", metrics: ["trace_count", "pass_rate", "checkpoint_rate", "avg_usefulness", "avg_tool_calls"], order_by: { metric: "checkpoint_rate", direction: "desc" } }) }),
         api<QueryResult>("/v1/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dataset_id: next.dataset_id, group_by: "tool_name", metrics: ["trace_count", "pass_rate", "avg_tool_calls"], order_by: { metric: "trace_count", direction: "desc" }, limit: 18 }) })
       ])
       setTraces(listed.traces)
-      setAnalysis({ behaviors, models, tools })
+      setAnalysis({ behaviors, failures, models, tools })
       return listed.traces
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Unable to load dataset") }
     finally { setLoading(false) }

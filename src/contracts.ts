@@ -167,6 +167,46 @@ export interface TraceSummary {
   readonly failed_checkpoints: number
 }
 
+export interface TraceFailureEvidence {
+  readonly summary: TraceSummary
+  readonly failure_modes: ReadonlyArray<FailureMode>
+}
+
+export interface FailureClusterTrace {
+  readonly trace_id: string
+  readonly title: string
+  readonly model: string
+  readonly task_id?: string
+  readonly work_type?: string
+  readonly behavior: BehaviorClass
+  readonly strict_pass?: boolean
+}
+
+export interface FailureClusterExample {
+  readonly model: string
+  readonly justification: string
+}
+
+export interface CountedLabel {
+  readonly label: string
+  readonly count: number
+}
+
+export interface FailureCluster {
+  readonly id: string
+  readonly trace_count: number
+  readonly model_count: number
+  readonly dominant_behaviors: ReadonlyArray<CountedLabel>
+  readonly dominant_task_types: ReadonlyArray<CountedLabel>
+  readonly examples: ReadonlyArray<FailureClusterExample>
+  readonly traces: ReadonlyArray<FailureClusterTrace>
+}
+
+export interface FailureAnalysis {
+  readonly dataset_id: string
+  readonly clusters: ReadonlyArray<FailureCluster>
+}
+
 export type ActivityCategory =
   | "trajectory"
   | "orient"

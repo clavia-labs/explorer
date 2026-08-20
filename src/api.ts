@@ -4,6 +4,7 @@ import {
   type ViewCell
 } from "./contracts.ts"
 import { deriveTraceActivity } from "./activity.ts"
+import { clusterFailureEvidence } from "./failure-analysis.ts"
 import { importTraceText } from "./importers/file.ts"
 import { policyCapabilities, redactTrace } from "./redaction.ts"
 import { createShareToken, verifyShareToken, type ShareClaims } from "./share.ts"
@@ -118,6 +119,14 @@ export const createApi = (store: TraceStoreApi) => {
           traces = traces.filter((trace) => sample.has(trace.trace_id))
         }
         return json({ policy, traces })
+      }
+
+      const failuresMatch = url.pathname.match(/^\/v1\/datasets\/([^/]+)\/failure-clusters$/)
+      if (request.method === "GET" && failuresMatch !== null) {
+        internal(access)
+        const datasetId = decodeURIComponent(failuresMatch[1]!)
+        datasetAccess(access, datasetId)
+        return json({ policy, ...clusterFailureEvidence(datasetId, await store.listFailureEvidence(datasetId)) })
       }
 
       const activityMatch = url.pathname.match(/^\/v1\/traces\/([^/]+)\/activity$/)
